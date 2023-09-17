@@ -16,4 +16,20 @@ type Indexer interface {
 	Delete(key []byte) bool
 }
 
+type IndexerType = int8
 
+const (
+	// BtreeIndex 索引
+	BtreeIndex IndexerType = iota + 1
+
+	// 后续可扩展
+)
+
+func NewIndexer(typ IndexerType) Indexer {
+	switch typ {
+	case BtreeIndex:
+		return NewBtreeIndexer()
+	default:
+		panic("unsurportted index type")
+	}
+}

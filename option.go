@@ -1,5 +1,7 @@
 package go_bitcask_kv
 
+import "go-bitcask-kv/index"
+
 type Option struct {
 	// 数据存放目录
 	DirPath string
@@ -10,4 +12,7 @@ type Option struct {
 
 	// 用于控制每次写入数据是否持久化
 	SyncWrites bool
+
+	// 索引类型
+	IndexType index.IndexerType
 }

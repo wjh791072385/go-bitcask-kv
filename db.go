@@ -1,8 +1,13 @@
 package go_bitcask_kv
 
 import (
+	"errors"
 	"go-bitcask-kv/data"
 	"go-bitcask-kv/index"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -12,7 +17,109 @@ type DB struct {
 	mu         *sync.RWMutex
 	activeFile *data.DataFile            // 当前活跃文件，可写入
 	olderFiles map[uint32]*data.DataFile // immutable文件
+	fileIds    []int                     // 用于fileId的排序
 	index      index.Indexer             // 内存索引结构
+}
+
+// Open 打开存储引擎实例
+func Open(option Option) (*DB, error) {
+	// 参数校验
+	if err := checkOptions(option); err != nil {
+		return nil, err
+	}
+
+	// 目录校验，如果不存在则创建
+	if _, err := os.Stat(option.DirPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(option.DirPath, os.ModePerm); err != nil {
+			return nil, err
+		}
+	}
+
+	// 初始化DB结构体
+	db := &DB{
+		option:     option,
+		mu:         new(sync.RWMutex),
+		olderFiles: make(map[uint32]*data.DataFile),
+		index:      index.NewIndexer(option.IndexType),
+	}
+
+	// 加载数据文件
+	if err := db.loadDataFiles(); err != nil {
+		return err
+	}
+
+	// 从数据文件中加载索引 维护在内存中
+	if err := db.loadIndexFromDataFiles(); err != nil {
+		return nil
+	}
+
+	return nil, nil
+}
+
+// 参数校验
+func checkOptions(option Option) error {
+	if len(option.DirPath) == 0 {
+		return errors.New("database dir path is empty")
+	}
+
+	if option.DataFileSize <= 0 {
+		return errors.New("database data file size must be greater than 0")
+	}
+
+	return nil
+}
+
+// 从磁盘中加载数据文件
+func (db *DB) loadDataFiles() error {
+	// 读取目录中的所有文件
+	dirEntries, err := os.ReadDir(db.option.DirPath)
+	if err != nil {
+		return err
+	}
+
+	// 遍历所有文件，找到数据文件
+	var fileIds []int
+
+	for _, entry := range dirEntries {
+		if strings.HasPrefix(entry.Name(), data.DataFileNamePrefix) {
+			// 文件名 bitcask_001.data
+			spName := strings.Split(entry.Name(), ".")
+			spNo := strings.Split(spName[0], "_")
+			fileid, err := strconv.Atoi(spNo[1])
+			if err != nil {
+				return ErrDataDirNameIncorrect
+			}
+
+			fileIds = append(fileIds, fileid)
+		}
+	}
+
+	// 对文件id排序，依次加载
+	sort.Ints(fileIds)
+
+	// 遍历文件id，打开所有的数据文件
+	for i, fid := range fileIds {
+		datafile, err := data.OpenDataFile(db.option.DirPath, uint32(fid))
+		if err != nil {
+			return nil
+		}
+
+		// 当遍历到最后一个文件，指定该文件为活跃文件
+		if i == len(fileIds)-1 {
+			db.activeFile = datafile
+		} else {
+			// 其他文件是older文件
+			db.olderFiles[uint32(fid)] = datafile
+		}
+	}
+
+	return nil
+}
+
+// 从数据文件中加载索引
+// 遍历文件中的所有记录，并更新到内存索引中
+func (db *DB) loadIndexFromDataFiles() error {
+
 }
 
 // Put 写入key-value，key不能为空
@@ -65,7 +172,17 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	}
 
 	// 根据偏移量读取数据
+	logRecord, err := dataFile.ReadLogRecord(recordPos.Offset)
+	if err != nil {
+		return nil, err
+	}
 
+	// 需要再判断类型
+	if logRecord.Type == data.LogRecordDeleted {
+		return nil, ErrKeyNotFound
+	}
+
+	return logRecord.Value, nil
 }
 
 // 追加写入日志文件中
@@ -119,7 +236,7 @@ func (db *DB) appendLogRecord(record *data.LogRecord) (*data.LogRecordPos, error
 		Offset: writeOff,
 	}
 
-	return pos
+	return pos, nil
 }
 
 // 初始化当前活跃文件

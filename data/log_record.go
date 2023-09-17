@@ -1,9 +1,9 @@
 package data
 
-type LogRecordType byte
+type LogRecordType int8
 
 const (
-	LogRecordNormal LogRecordType = iota
+	LogRecordNormal LogRecordType = iota + 1
 	LogRecordDeleted
 )
 
@@ -21,6 +21,7 @@ type LogRecordPos struct {
 }
 
 // EncodeLogRecord 对logRecord编码
+// todo 编解码后续统一补充
 func EncodeLogRecord(record *LogRecord) ([]byte, int64) {
 	return []byte(""), 0
 }

@@ -7,7 +7,7 @@ import (
 )
 
 func TestBtree_Put(t *testing.T) {
-	bt := NewIndexer()
+	bt := NewBtreeIndexer()
 
 	res1 := bt.Put(nil, &data.LogRecordPos{Fid: 1, Offset: 100})
 	assert.True(t, res1)
@@ -17,7 +17,7 @@ func TestBtree_Put(t *testing.T) {
 }
 
 func TestBtree_Get(t *testing.T) {
-	bt := NewIndexer()
+	bt := NewBtreeIndexer()
 
 	// 测试写入key为nil
 	res1 := bt.Put(nil, &data.LogRecordPos{Fid: 1, Offset: 100})
@@ -44,7 +44,7 @@ func TestBtree_Get(t *testing.T) {
 }
 
 func TestBtree_Delete(t *testing.T) {
-	bt := NewIndexer()
+	bt := NewBtreeIndexer()
 
 	// 删除不存在的元素
 	res := bt.Delete([]byte("io"))

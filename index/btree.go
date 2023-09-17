@@ -7,7 +7,6 @@ import (
 	"sync"
 )
 
-
 // Btree 索引，封装google的btree kv
 type Btree struct {
 	// Write operations are not safe for concurrent mutation by multiple
@@ -17,7 +16,7 @@ type Btree struct {
 	lock *sync.RWMutex
 }
 
-func NewIndexer() *Btree {
+func NewBtreeIndexer() *Btree {
 	return &Btree{
 		tree: btree.New(32),
 		lock: new(sync.RWMutex),
@@ -64,5 +63,3 @@ func (item *Item) Less(bi btree.Item) bool {
 	// 从小到大进行排序
 	return bytes.Compare(item.key, bi.(*Item).key) < 0
 }
-
-
