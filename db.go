@@ -4,6 +4,7 @@ import (
 	"errors"
 	"go-bitcask-kv/data"
 	"go-bitcask-kv/index"
+	"io"
 	"os"
 	"sort"
 	"strconv"
@@ -45,81 +46,15 @@ func Open(option Option) (*DB, error) {
 
 	// 加载数据文件
 	if err := db.loadDataFiles(); err != nil {
-		return err
+		return nil, err
 	}
 
 	// 从数据文件中加载索引 维护在内存中
 	if err := db.loadIndexFromDataFiles(); err != nil {
-		return nil
+		return nil, err
 	}
 
-	return nil, nil
-}
-
-// 参数校验
-func checkOptions(option Option) error {
-	if len(option.DirPath) == 0 {
-		return errors.New("database dir path is empty")
-	}
-
-	if option.DataFileSize <= 0 {
-		return errors.New("database data file size must be greater than 0")
-	}
-
-	return nil
-}
-
-// 从磁盘中加载数据文件
-func (db *DB) loadDataFiles() error {
-	// 读取目录中的所有文件
-	dirEntries, err := os.ReadDir(db.option.DirPath)
-	if err != nil {
-		return err
-	}
-
-	// 遍历所有文件，找到数据文件
-	var fileIds []int
-
-	for _, entry := range dirEntries {
-		if strings.HasPrefix(entry.Name(), data.DataFileNamePrefix) {
-			// 文件名 bitcask_001.data
-			spName := strings.Split(entry.Name(), ".")
-			spNo := strings.Split(spName[0], "_")
-			fileid, err := strconv.Atoi(spNo[1])
-			if err != nil {
-				return ErrDataDirNameIncorrect
-			}
-
-			fileIds = append(fileIds, fileid)
-		}
-	}
-
-	// 对文件id排序，依次加载
-	sort.Ints(fileIds)
-
-	// 遍历文件id，打开所有的数据文件
-	for i, fid := range fileIds {
-		datafile, err := data.OpenDataFile(db.option.DirPath, uint32(fid))
-		if err != nil {
-			return nil
-		}
-
-		// 当遍历到最后一个文件，指定该文件为活跃文件
-		if i == len(fileIds)-1 {
-			db.activeFile = datafile
-		} else {
-			// 其他文件是older文件
-			db.olderFiles[uint32(fid)] = datafile
-		}
-	}
-
-	return nil
-}
-
-// 从数据文件中加载索引
-// 遍历文件中的所有记录，并更新到内存索引中
-func (db *DB) loadIndexFromDataFiles() error {
-
+	return db, nil
 }
 
 // Put 写入key-value，key不能为空
@@ -172,7 +107,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	}
 
 	// 根据偏移量读取数据
-	logRecord, err := dataFile.ReadLogRecord(recordPos.Offset)
+	logRecord, _, err := dataFile.ReadLogRecord(recordPos.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -183,6 +118,155 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	}
 
 	return logRecord.Value, nil
+}
+
+func (db *DB) Delete(key []byte) error {
+	if len(key) == 0 {
+		return ErrKeyIsEmpty
+	}
+
+	// 先查找key是否存在
+	if recordPos := db.index.Get(key); recordPos == nil {
+		return nil
+	}
+
+	// 构造墓碑追加写入到日志文件中
+	logRecord := &data.LogRecord{
+		Key:   key,
+		Value: nil,
+		Type:  data.LogRecordDeleted,
+	}
+
+	_, err := db.appendLogRecord(logRecord)
+	if err != nil {
+		return err
+	}
+
+	// 写入成功后从内存索引中删除
+	ok := db.index.Delete(key)
+	if !ok {
+		return ErrIndexUpdateFailed
+	}
+	return nil
+}
+
+// 参数校验
+func checkOptions(option Option) error {
+	if len(option.DirPath) == 0 {
+		return errors.New("database dir path is empty")
+	}
+
+	if option.DataFileSize <= 0 {
+		return errors.New("database data file size must be greater than 0")
+	}
+
+	return nil
+}
+
+// 从磁盘中加载数据文件
+func (db *DB) loadDataFiles() error {
+	// 读取目录中的所有文件
+	dirEntries, err := os.ReadDir(db.option.DirPath)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range dirEntries {
+		if strings.HasPrefix(entry.Name(), data.DataFileNamePrefix) {
+			// 文件名 bitcask_001.data
+			spName := strings.Split(entry.Name(), ".")
+			spNo := strings.Split(spName[0], "_")
+			fileId, err := strconv.Atoi(spNo[1])
+			if err != nil {
+				return ErrDataDirNameIncorrect
+			}
+
+			db.fileIds = append(db.fileIds, fileId)
+		}
+	}
+
+	// 对文件id排序，依次加载
+	sort.Ints(db.fileIds)
+
+	// 遍历文件id，打开所有的数据文件
+	for i, fid := range db.fileIds {
+		datafile, err := data.OpenDataFile(db.option.DirPath, uint32(fid))
+		if err != nil {
+			return nil
+		}
+
+		// 当遍历到最后一个文件，指定该文件为活跃文件
+		if i == len(db.fileIds)-1 {
+			db.activeFile = datafile
+		} else {
+			// 其他文件是older文件
+			db.olderFiles[uint32(fid)] = datafile
+		}
+	}
+
+	return nil
+}
+
+// 从数据文件中加载索引
+// 遍历文件中的所有记录，并更新到内存索引中
+func (db *DB) loadIndexFromDataFiles() error {
+	// 如果当前fileIds为空，说明数据库为空，直接返回即可
+	if len(db.fileIds) == 0 {
+		return nil
+	}
+
+	// 遍历所有的文件id，处理文件中的记录
+	for _, fid := range db.fileIds {
+		var fileId = uint32(fid)
+		var dataFile *data.DataFile
+		if fileId == db.activeFile.FileId {
+			dataFile = db.activeFile
+		} else {
+			dataFile = db.olderFiles[fileId]
+		}
+
+		var offset int64 = 0
+		for {
+			// 读取dataFile中的内容
+			logRecord, size, err := dataFile.ReadLogRecord(offset)
+			if err != nil {
+				// 判断是否是读完了
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+
+			// 将record插入到内存索引中
+			logRecordPos := &data.LogRecordPos{
+				Fid:    fileId,
+				Offset: offset,
+			}
+
+			var ok bool
+			if logRecord.Type == data.LogRecordDeleted {
+				// 删除索引
+				ok = db.index.Delete(logRecord.Key)
+			} else {
+				ok = db.index.Put(logRecord.Key, logRecordPos)
+			}
+
+			if !ok {
+				return ErrIndexUpdateFailed
+			}
+
+			// offset加上记录长度
+			offset += size
+		}
+
+		// 如果是活跃文件，要记录最后一个记录的最后位置
+		// 因为追加写入的偏移需要记录
+		if fileId == db.activeFile.FileId {
+			db.activeFile.WriteOff = offset
+		}
+	}
+
+	return nil
 }
 
 // 追加写入日志文件中

@@ -15,8 +15,8 @@ func OpenDataFile(path string, fileid uint32) (*DataFile, error) {
 	return nil, nil
 }
 
-func (file *DataFile) ReadLogRecord(offset int64) (*LogRecord, error) {
-	return nil, nil
+func (file *DataFile) ReadLogRecord(offset int64) (*LogRecord, int64, error) {
+	return nil, 0, nil
 }
 
 func (file *DataFile) Sync() error {
