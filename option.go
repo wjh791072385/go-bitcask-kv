@@ -1,6 +1,9 @@
 package go_bitcask_kv
 
-import "go-bitcask-kv/index"
+import (
+	"go-bitcask-kv/index"
+	"os"
+)
 
 type Option struct {
 	// 数据存放目录
@@ -15,4 +18,17 @@ type Option struct {
 
 	// 索引类型
 	IndexType index.IndexerType
+}
+
+var DefaultOption = Option{
+	DirPath: os.TempDir(),
+
+	// 默认64M
+	DataFileSize: 64 * 1024 * 1024,
+
+	// 默认不同步刷新
+	SyncWrites: false,
+
+	// 默认BTree索引
+	IndexType: index.BtreeIndex,
 }

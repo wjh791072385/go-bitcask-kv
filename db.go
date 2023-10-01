@@ -16,10 +16,10 @@ import (
 type DB struct {
 	option     Option
 	mu         *sync.RWMutex
-	activeFile *data.DataFile            // 当前活跃文件，可写入
-	olderFiles map[uint32]*data.DataFile // immutable文件
-	fileIds    []int                     // 用于fileId的排序
-	index      index.Indexer             // 内存索引结构
+	activeFile *data.SegDataFile            // 当前活跃文件，可写入
+	olderFiles map[uint32]*data.SegDataFile // immutable文件
+	fileIds    []int                        // 用于fileId的排序
+	index      index.Indexer                // 内存索引结构
 }
 
 // Open 打开存储引擎实例
@@ -40,7 +40,7 @@ func Open(option Option) (*DB, error) {
 	db := &DB{
 		option:     option,
 		mu:         new(sync.RWMutex),
-		olderFiles: make(map[uint32]*data.DataFile),
+		olderFiles: make(map[uint32]*data.SegDataFile),
 		index:      index.NewIndexer(option.IndexType),
 	}
 
@@ -95,7 +95,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	}
 
 	// 根据文件id找到文件，先尝试从active文件中找，再在旧文件中找
-	var dataFile *data.DataFile
+	var dataFile *data.SegDataFile
 	if db.activeFile.FileId == recordPos.Fid {
 		dataFile = db.activeFile
 	} else {
@@ -172,7 +172,7 @@ func (db *DB) loadDataFiles() error {
 	}
 
 	for _, entry := range dirEntries {
-		if strings.HasPrefix(entry.Name(), data.DataFileNamePrefix) && strings.HasSuffix(entry.Name(), data.DataFileNameSuffix) {
+		if strings.HasPrefix(entry.Name(), data.SegDataFileNamePrefix) && strings.HasSuffix(entry.Name(), data.SegDataFileNameSuffix) {
 			// 文件名 bitcask_001.data
 			spName := strings.Split(entry.Name(), ".")
 			spNo := strings.Split(spName[0], "_")
@@ -218,7 +218,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 	// 遍历所有的文件id，处理文件中的记录
 	for _, fid := range db.fileIds {
 		var fileId = uint32(fid)
-		var dataFile *data.DataFile
+		var dataFile *data.SegDataFile
 		if fileId == db.activeFile.FileId {
 			dataFile = db.activeFile
 		} else {

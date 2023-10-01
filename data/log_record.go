@@ -31,7 +31,8 @@ type logRecordHeader struct {
 	valueSize  uint32
 }
 
-func encodeRecordHeader(logRecord *LogRecord) ([]byte, int64) {
+// EncodeRecordHeader 对logRecord头部进行编码
+func EncodeRecordHeader(logRecord *LogRecord) ([]byte, int64) {
 	headerBuf := make([]byte, maxLogRecordHeaderSize)
 
 	// 预留4B
@@ -50,23 +51,36 @@ func encodeRecordHeader(logRecord *LogRecord) ([]byte, int64) {
 	return headerBuf[:offset], int64(offset)
 }
 
-// 不需要返回error, 返回头部长度即可
-func decodeRecordHeader(headerBuf []byte) (*logRecordHeader, uint32) {
+// DecodeRecordHeader 对头部进行解码，返回头部长度即可
+func DecodeRecordHeader(headerBuf []byte) (*logRecordHeader, int64) {
 	// 长度最短为7B
 	if len(headerBuf) < minLogRecordHeaderSize {
 		return nil, 0
 	}
 
+	keySize, keyOffset := binary.Uvarint(headerBuf[crc32.Size+logRecordTypeSize:])
+	valueSize, valueOffset := binary.Uvarint(headerBuf[crc32.Size+logRecordTypeSize+keyOffset:])
+
 	header := &logRecordHeader{
-		crc: binary.LittleEndian.Uint32(headerBuf[:crc32.Size]),
+		crc:        binary.LittleEndian.Uint32(headerBuf[:crc32.Size]),
+		recordType: LogRecordType(headerBuf[crc32.Size]),
+		keySize:    uint32(keySize),
+		valueSize:  uint32(valueSize),
 	}
 
-	return nil, 0
+	return header, int64(crc32.Size + logRecordTypeSize + keyOffset + valueOffset)
 }
 
 // 计算头部和数据部分的一个CRC值
-func getLogRecordCRC(head []byte, logRecord *LogRecord) uint32 {
-	return 0
+func getLogRecordCRC(logRecord *LogRecord, headerBuf []byte) uint32 {
+	if logRecord == nil {
+		return 0
+	}
+
+	crc := crc32.ChecksumIEEE(headerBuf)
+	crc = crc32.Update(crc, crc32.IEEETable, logRecord.Key)
+	crc = crc32.Update(crc, crc32.IEEETable, logRecord.Value)
+	return crc
 }
 
 // LogRecord WAL日志记录
@@ -85,7 +99,7 @@ type LogRecordPos struct {
 // EncodeLogRecord 对logRecord编码
 func EncodeLogRecord(record *LogRecord) ([]byte, int64) {
 	// 对header部分编码
-	headerBuf, headerSize := encodeRecordHeader(record)
+	headerBuf, headerSize := EncodeRecordHeader(record)
 
 	var totalSize = headerSize + int64(len(record.Key)) + int64(len(record.Value))
 	buf := make([]byte, totalSize)
@@ -104,6 +118,13 @@ func EncodeLogRecord(record *LogRecord) ([]byte, int64) {
 	return buf, totalSize
 }
 
+// DecodeLogRecord Todo 对模块功能进一步拆分
 func DecodeLogRecord(buf []byte) (record *LogRecord) {
-	return nil
+	// 这里只处理了对数据区的解码，并没有包含header部分的解码
+	// 因为需要根据header部分的解码，才能知道数据长度是多少
+	record = &LogRecord{
+		Key:   buf[0:],
+		Value: buf[0:],
+	}
+	return record
 }
