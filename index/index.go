@@ -4,6 +4,15 @@ import (
 	"go-bitcask-kv/data"
 )
 
+type IndexerType = int8
+
+const (
+	// BtreeIndex 索引
+	BtreeIndex IndexerType = iota + 1
+
+	// 后续可扩展
+)
+
 // Indexer 抽象索引接口
 type Indexer interface {
 	// Put 插入索引
@@ -15,15 +24,6 @@ type Indexer interface {
 	// Delete 删除索引
 	Delete(key []byte) bool
 }
-
-type IndexerType = int8
-
-const (
-	// BtreeIndex 索引
-	BtreeIndex IndexerType = iota + 1
-
-	// 后续可扩展
-)
 
 func NewIndexer(typ IndexerType) Indexer {
 	switch typ {

@@ -172,7 +172,7 @@ func (db *DB) loadDataFiles() error {
 	}
 
 	for _, entry := range dirEntries {
-		if strings.HasPrefix(entry.Name(), data.DataFileNamePrefix) {
+		if strings.HasPrefix(entry.Name(), data.DataFileNamePrefix) && strings.HasSuffix(entry.Name(), data.DataFileNameSuffix) {
 			// 文件名 bitcask_001.data
 			spName := strings.Split(entry.Name(), ".")
 			spNo := strings.Split(spName[0], "_")

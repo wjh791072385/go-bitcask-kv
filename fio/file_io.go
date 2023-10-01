@@ -4,12 +4,12 @@ import "os"
 
 // FileIO 用于封装标准文件的IO
 type FileIO struct {
-	fd *os.File  // 私有文件操作符
+	fd *os.File // 私有文件操作符
 }
 
 // NewFileIOManager 初始化标准文件IO
 func NewFileIOManager(fileName string) (*FileIO, error) {
-	file, err := os.OpenFile(fileName, os.O_CREATE | os.O_RDWR | os.O_APPEND, DataFilePerm)
+	file, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR|os.O_APPEND, DataFilePerm)
 	if err != nil {
 		return nil, err
 	}
@@ -23,7 +23,7 @@ func (fio *FileIO) Read(b []byte, offset int64) (int, error) {
 }
 
 // Write 写入字节数组到文件中
-func (fio *FileIO) Write(b []byte)(int, error) {
+func (fio *FileIO) Write(b []byte) (int, error) {
 	return fio.fd.Write(b)
 }
 
@@ -35,6 +35,14 @@ func (fio *FileIO) Sync() error {
 // Close 关闭文件
 func (fio *FileIO) Close() error {
 	return fio.fd.Close()
+}
+
+func (fio *FileIO) Size() (int64, error) {
+	stat, err := fio.fd.Stat()
+	if err != nil {
+		return 0, err
+	}
+	return stat.Size(), err
 }
 
 // ClearFile 清空文件, 测试辅助方法

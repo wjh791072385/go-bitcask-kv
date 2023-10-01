@@ -14,7 +14,7 @@ func destoryFile(name string) {
 }
 
 func TestNewFileIOManager(t *testing.T) {
-	path := filepath.Join("/tmp", "tes.data")
+	path := filepath.Join(os.TempDir(), "tes.data")
 	fio, err := NewFileIOManager(path)
 	defer destoryFile(path)
 
@@ -23,7 +23,7 @@ func TestNewFileIOManager(t *testing.T) {
 }
 
 func TestFileIO_Write(t *testing.T) {
-	path := filepath.Join("/tmp", "tes.data")
+	path := filepath.Join(os.TempDir(), "tes.data")
 	fio, err := NewFileIOManager(path)
 	defer destoryFile(path)
 
@@ -33,7 +33,6 @@ func TestFileIO_Write(t *testing.T) {
 	len, err := fio.Write([]byte("hello\n"))
 	assert.Equal(t, 6, len)
 	assert.Nil(t, err)
-
 
 	len, err = fio.Write([]byte(""))
 	assert.Equal(t, 0, len)
@@ -45,7 +44,7 @@ func TestFileIO_Write(t *testing.T) {
 }
 
 func TestFileIO_Read(t *testing.T) {
-	path := filepath.Join("/tmp", "tes.data")
+	path := filepath.Join(os.TempDir(), "tes.data")
 	fio, err := NewFileIOManager(path)
 	defer destoryFile(path)
 	assert.Nil(t, err)
@@ -72,7 +71,7 @@ func TestFileIO_Read(t *testing.T) {
 }
 
 func TestFileIO_Sync(t *testing.T) {
-	path := filepath.Join("/tmp", "tes.data")
+	path := filepath.Join(os.TempDir(), "tes.data")
 	fio, err := NewFileIOManager(path)
 	defer destoryFile(path)
 	assert.Nil(t, err)
@@ -83,7 +82,7 @@ func TestFileIO_Sync(t *testing.T) {
 }
 
 func TestFileIO_Close(t *testing.T) {
-	path := filepath.Join("/tmp", "tes.data")
+	path := filepath.Join(os.TempDir(), "tes.data")
 	fio, err := NewFileIOManager(path)
 	defer destoryFile(path)
 	assert.Nil(t, err)

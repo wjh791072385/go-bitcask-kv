@@ -1,11 +1,41 @@
 package data
 
+import "encoding/binary"
+
 type LogRecordType int8
 
 const (
 	LogRecordNormal LogRecordType = iota + 1
 	LogRecordDeleted
 )
+
+// Log Head Format
+// crc    |    type	   |    key_size	| 	value_size    |    key    |		value
+//
+//	4B    		1B   		variable 5B	    variable 5B
+const maxLogRecordHeaderSize = binary.MaxVarintLen32*2 + 5
+
+// WAL日志记录的Header部分
+type logRecordHeader struct {
+	crc        uint32
+	recordType LogRecordType
+	keySize    uint32
+	valueSize  uint32
+}
+
+func encodeRecordHeader() {
+
+}
+
+// 不需要返回error, 返回头部长度即可
+func decodeRecordHeader([]byte) (*logRecordHeader, uint32) {
+	return nil, 0
+}
+
+// 计算头部和数据部分的一个CRC值
+func getLogRecordCRC(head []byte, logRecord *LogRecord) uint32 {
+	return 0
+}
 
 // LogRecord WAL日志记录
 type LogRecord struct {

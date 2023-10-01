@@ -21,6 +21,9 @@ type IOManager interface {
 
 	// Close 关闭文件
 	Close() error
+
+	// Size 返回文件大小
+	Size() (int64, error)
 }
 
 // NewIOManager 初始化IOManager, 目前只实现标准IO, 后续可以自行增加判断
@@ -29,7 +32,6 @@ func NewIOManager(fileName string, typ IOType) (IOManager, error) {
 	case StandardIO:
 		return NewFileIOManager(fileName)
 	default:
-		return NewFileIOManager(fileName)
+		panic("unsurportted IO type")
 	}
-
 }
