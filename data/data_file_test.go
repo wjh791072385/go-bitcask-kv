@@ -19,3 +19,7 @@ func TestOpenDataFile(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile2)
 }
+
+func TestDataFile_Write(t *testing.T) {
+
+}
