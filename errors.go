@@ -1,4 +1,4 @@
-package go_bitcask_kv
+package bitcaskKV
 
 import "errors"
 

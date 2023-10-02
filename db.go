@@ -1,4 +1,4 @@
-package go_bitcask_kv
+package bitcaskKV
 
 import (
 	"errors"
@@ -94,6 +94,11 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 		return nil, ErrKeyNotFound
 	}
 
+	// 根据索引信息找到对应记录
+	return db.getValueByPosition(recordPos)
+}
+
+func (db *DB) getValueByPosition(recordPos *data.LogRecordPos) ([]byte, error) {
 	// 根据文件id找到文件，先尝试从active文件中找，再在旧文件中找
 	var dataFile *data.SegDataFile
 	if db.activeFile.FileId == recordPos.Fid {
@@ -120,6 +125,43 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	return logRecord.Value, nil
 }
 
+// ListKeys 获取存储引擎中
+func (db *DB) ListKeys() [][]byte {
+	keys := make([][]byte, db.index.Size())
+	it := db.index.Iterator(false)
+
+	// 通过迭代器获取keys
+	idx := 0
+	for it.Rewind(); it.Valid(); it.Next() {
+		keys[idx] = it.Key()
+		idx++
+	}
+
+	return keys
+}
+
+type handleFunc func(key []byte, value []byte) bool
+
+// Fold 对DB中的所有数据执行指定操作
+func (db *DB) Fold(hd handleFunc) error {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	it := db.index.Iterator(false)
+	for it.Rewind(); it.Valid(); it.Next() {
+		val, err := db.getValueByPosition(it.Value())
+		if err != nil {
+			return err
+		}
+
+		// 执行回调函数
+		if hd(it.Key(), val) == false {
+			break
+		}
+	}
+	return nil
+}
+
 func (db *DB) Delete(key []byte) error {
 	if len(key) == 0 {
 		return ErrKeyIsEmpty
@@ -127,6 +169,7 @@ func (db *DB) Delete(key []byte) error {
 
 	// 先查找key是否存在
 	if recordPos := db.index.Get(key); recordPos == nil {
+		// 不存在的话应该返回nil ，毕竟也是正确删除，并非发生错误
 		return nil
 	}
 
@@ -148,6 +191,42 @@ func (db *DB) Delete(key []byte) error {
 		return ErrIndexUpdateFailed
 	}
 	return nil
+}
+
+func (db *DB) Close() error {
+	if db.activeFile == nil {
+		// 说明都没启动
+		return nil
+	}
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	// 关闭活跃文件
+	if err := db.activeFile.Close(); err != nil {
+		return err
+	}
+
+	// 关闭旧数据文件
+	for _, file := range db.olderFiles {
+		if err := file.Close(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Sync 刷盘 持久化数据文件
+func (db *DB) Sync() error {
+	if db.activeFile == nil {
+		// 说明都没启动
+		return nil
+	}
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	return db.activeFile.Sync()
 }
 
 // 参数校验

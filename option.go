@@ -1,10 +1,11 @@
-package go_bitcask_kv
+package bitcaskKV
 
 import (
 	"go-bitcask-kv/index"
 	"os"
 )
 
+// Option 存储引擎配置项
 type Option struct {
 	// 数据存放目录
 	DirPath string
@@ -31,4 +32,18 @@ var DefaultOption = Option{
 
 	// 默认BTree索引
 	IndexType: index.BtreeIndex,
+}
+
+// IteratorOption 指定迭代器配置项
+type IteratorOption struct {
+	// 指定前缀匹配
+	prefix []byte
+
+	// 反转
+	reverse bool
+}
+
+var DefaultIteratorOption = IteratorOption{
+	prefix:  nil,
+	reverse: false,
 }

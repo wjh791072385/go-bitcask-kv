@@ -23,6 +23,10 @@ type Indexer interface {
 
 	// Delete 删除索引
 	Delete(key []byte) bool
+
+	Iterator(reverse bool) IndexerIterator
+
+	Size() int
 }
 
 func NewIndexer(typ IndexerType) Indexer {
@@ -30,6 +34,6 @@ func NewIndexer(typ IndexerType) Indexer {
 	case BtreeIndex:
 		return NewBtreeIndexer()
 	default:
-		panic("unsurportted index type")
+		panic("unSupported index type")
 	}
 }

@@ -7,9 +7,9 @@ import (
 )
 
 var (
-	randStr         = rand.New(rand.NewSource(time.Now().UnixNano()))
-	letterString    = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	numLetterString = "0123456789"
+	randStr      = rand.New(rand.NewSource(time.Now().UnixNano()))
+	letterString = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	//numLetterString = "0123456789"
 )
 
 // GetTestKey 根据序号生成key
