@@ -21,6 +21,24 @@ type Option struct {
 	IndexType index.IndexerType
 }
 
+// IteratorOption 指定迭代器配置项
+type IteratorOption struct {
+	// 指定前缀匹配
+	prefix []byte
+
+	// 反转
+	reverse bool
+}
+
+// WriteBatchOption Batch配置项
+type WriteBatchOption struct {
+	// 一个batch最大的数据量
+	maxBatchNum int
+
+	// 提交事务时是否持久化
+	SyncWriteBatch bool
+}
+
 var DefaultOption = Option{
 	DirPath: os.TempDir(),
 
@@ -34,16 +52,12 @@ var DefaultOption = Option{
 	IndexType: index.BtreeIndex,
 }
 
-// IteratorOption 指定迭代器配置项
-type IteratorOption struct {
-	// 指定前缀匹配
-	prefix []byte
-
-	// 反转
-	reverse bool
-}
-
 var DefaultIteratorOption = IteratorOption{
 	prefix:  nil,
 	reverse: false,
+}
+
+var DefaultWriteBachOption = WriteBatchOption{
+	maxBatchNum:    1024,
+	SyncWriteBatch: true, // 默认最好设置为一旦commit，就进行持久化
 }

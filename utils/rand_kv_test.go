@@ -13,6 +13,6 @@ func TestGetTestKey(t *testing.T) {
 
 func TestRandomValue(t *testing.T) {
 	for i := 0; i < 10; i++ {
-		assert.NotNil(t, string(RandomValue(10)))
+		assert.NotNil(t, string(GetTestRandomValue(10)))
 	}
 }

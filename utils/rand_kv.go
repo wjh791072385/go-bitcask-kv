@@ -17,8 +17,8 @@ func GetTestKey(number int) []byte {
 	return []byte(fmt.Sprintf("bitcask-key-%09d", number))
 }
 
-// RandomValue 生成长度为n的随机字符串
-func RandomValue(n int) []byte {
+// GetTestRandomValue 生成长度为n的随机字符串
+func GetTestRandomValue(n int) []byte {
 	buf := make([]byte, n)
 
 	for i, _ := range buf {

@@ -20,6 +20,7 @@ type DB struct {
 	olderFiles map[uint32]*data.SegDataFile // immutable文件
 	fileIds    []int                        // 用于fileId的排序
 	index      index.Indexer                // 内存索引结构
+	seqNo      uint64                       // batch递增序号
 }
 
 // Open 打开存储引擎实例
@@ -44,12 +45,12 @@ func Open(option Option) (*DB, error) {
 		index:      index.NewIndexer(option.IndexType),
 	}
 
-	// 加载数据文件
+	// 加载数据文件，打开对应的数据文件指针
 	if err := db.loadDataFiles(); err != nil {
 		return nil, err
 	}
 
-	// 从数据文件中加载索引 维护在内存中
+	// 从数据文件中加载数据索引 维护在内存中
 	if err := db.loadIndexFromDataFiles(); err != nil {
 		return nil, err
 	}
@@ -65,12 +66,12 @@ func (db *DB) Put(key []byte, value []byte) error {
 
 	// 单条日志记录
 	logRecord := &data.LogRecord{
-		Key:   key,
+		Key:   encodeRecordKeyWithSeq(key, nonTransactionSeqNo),
 		Value: value,
 		Type:  data.LogRecordNormal,
 	}
 
-	pos, err := db.appendLogRecord(logRecord)
+	pos, err := db.appendLogRecordWithLock(logRecord)
 	if err != nil {
 		return err
 	}
@@ -175,12 +176,12 @@ func (db *DB) Delete(key []byte) error {
 
 	// 构造墓碑追加写入到日志文件中
 	logRecord := &data.LogRecord{
-		Key:   key,
+		Key:   encodeRecordKeyWithSeq(key, nonTransactionSeqNo),
 		Value: nil,
 		Type:  data.LogRecordDeleted,
 	}
 
-	_, err := db.appendLogRecord(logRecord)
+	_, err := db.appendLogRecordWithLock(logRecord)
 	if err != nil {
 		return err
 	}
@@ -286,6 +287,7 @@ func (db *DB) loadDataFiles() error {
 	return nil
 }
 
+// 更新内存索引
 // 从数据文件中加载索引
 // 遍历文件中的所有记录，并更新到内存索引中
 func (db *DB) loadIndexFromDataFiles() error {
@@ -293,6 +295,27 @@ func (db *DB) loadIndexFromDataFiles() error {
 	if len(db.fileIds) == 0 {
 		return nil
 	}
+
+	// 更新内存索引辅助函数
+	updateIndex := func(key []byte, typ data.LogRecordType, pos *data.LogRecordPos) {
+		var ok bool
+		if typ == data.LogRecordDeleted {
+			// 删除索引
+			ok = db.index.Delete(key)
+		} else if typ == data.LogRecordNormal {
+			ok = db.index.Put(key, pos)
+		}
+
+		if !ok {
+			panic("failed to load index at startup")
+		}
+	}
+
+	// 暂存事务数据
+	transactionRecord := make(map[uint64][]*data.TransactionRecord)
+
+	// 记录最大的序列号
+	var currentSeqNo uint64 = nonTransactionSeqNo
 
 	// 遍历所有的文件id，处理文件中的记录
 	for _, fid := range db.fileIds {
@@ -316,22 +339,38 @@ func (db *DB) loadIndexFromDataFiles() error {
 				return err
 			}
 
-			// 将record插入到内存索引中
+			// 构造内存索引
 			logRecordPos := &data.LogRecordPos{
 				Fid:    fileId,
 				Offset: offset,
 			}
 
-			var ok bool
-			if logRecord.Type == data.LogRecordDeleted {
-				// 删除索引
-				ok = db.index.Delete(logRecord.Key)
+			// 解析key，判断是否是事务
+			realKey, seqNo := decodeRecordKeyWithSeq(logRecord.Key)
+			if seqNo == nonTransactionSeqNo {
+				// 非事务操作，直接更新
+				updateIndex(realKey, logRecord.Type, logRecordPos)
 			} else {
-				ok = db.index.Put(logRecord.Key, logRecordPos)
+				// 针对事务，先将其缓存起来，直到读取到事务结束标志
+				if logRecord.Type == data.LogRecordTxnFinished {
+					// 更新对应的索引
+					for _, rec := range transactionRecord[seqNo] {
+						updateIndex(rec.Record.Key, rec.Record.Type, rec.Pos)
+					}
+
+					// 删除缓存
+					delete(transactionRecord, seqNo)
+				} else {
+					logRecord.Key = realKey
+					transactionRecord[seqNo] = append(transactionRecord[seqNo], &data.TransactionRecord{
+						Record: logRecord,
+						Pos:    logRecordPos,
+					})
+				}
 			}
 
-			if !ok {
-				return ErrIndexUpdateFailed
+			if seqNo > currentSeqNo {
+				currentSeqNo = seqNo
 			}
 
 			// offset加上记录长度
@@ -345,14 +384,22 @@ func (db *DB) loadIndexFromDataFiles() error {
 		}
 	}
 
+	// 更新事务序列号
+	db.seqNo = currentSeqNo
+
 	return nil
+}
+
+// 新增一个方法，方便writeBatch时不加锁
+func (db *DB) appendLogRecordWithLock(record *data.LogRecord) (*data.LogRecordPos, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	return db.appendLogRecord(record)
 }
 
 // 追加写入日志文件中
 func (db *DB) appendLogRecord(record *data.LogRecord) (*data.LogRecordPos, error) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-
 	// 确保活跃文件存在
 	if db.activeFile == nil {
 		if err := db.setActiveDataFile(); err != nil {

@@ -16,15 +16,15 @@ func TestDB_NewIterator(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, db)
 
-	err = db.Put([]byte("hello"), utils.RandomValue(10))
+	err = db.Put([]byte("hello"), utils.GetTestRandomValue(10))
 	assert.Nil(t, err)
-	err = db.Put([]byte("hel"), utils.RandomValue(10))
+	err = db.Put([]byte("hel"), utils.GetTestRandomValue(10))
 	assert.Nil(t, err)
-	err = db.Put([]byte("world"), utils.RandomValue(10))
+	err = db.Put([]byte("world"), utils.GetTestRandomValue(10))
 	assert.Nil(t, err)
-	err = db.Put([]byte("bitcask"), utils.RandomValue(10))
+	err = db.Put([]byte("bitcask"), utils.GetTestRandomValue(10))
 	assert.Nil(t, err)
-	err = db.Put([]byte("hh"), utils.RandomValue(10))
+	err = db.Put([]byte("hh"), utils.GetTestRandomValue(10))
 	assert.Nil(t, err)
 
 	// 正向迭代

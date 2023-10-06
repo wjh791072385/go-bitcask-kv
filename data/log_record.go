@@ -10,6 +10,7 @@ type LogRecordType int8
 const (
 	LogRecordNormal LogRecordType = iota + 1
 	LogRecordDeleted
+	LogRecordTxnFinished
 )
 
 // Log Head Format
@@ -127,4 +128,10 @@ func DecodeLogRecord(buf []byte) (record *LogRecord) {
 		Value: buf[0:],
 	}
 	return record
+}
+
+// TransactionRecord 用于暂存事务记录
+type TransactionRecord struct {
+	Record *LogRecord
+	Pos    *LogRecordPos
 }
