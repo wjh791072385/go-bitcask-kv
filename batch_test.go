@@ -189,6 +189,4 @@ func TestWriteBatch_Commit(t *testing.T) {
 	val, err = db2.Get(utils.GetTestKey(7))
 	assert.Equal(t, ErrKeyNotFound, err)
 	assert.Nil(t, val)
-
-	t.Log(db2.seqNo)
 }

@@ -21,6 +21,7 @@ type DB struct {
 	fileIds    []int                        // 用于fileId的排序
 	index      index.Indexer                // 内存索引结构
 	seqNo      uint64                       // batch递增序号
+	isMerging  bool                         // 标识是否正在进行Merge
 }
 
 // Open 打开存储引擎实例
@@ -390,7 +391,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 	return nil
 }
 
-// 新增一个方法，方便writeBatch时不加锁
+// 正常put delete需要加锁
 func (db *DB) appendLogRecordWithLock(record *data.LogRecord) (*data.LogRecordPos, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -398,11 +399,11 @@ func (db *DB) appendLogRecordWithLock(record *data.LogRecord) (*data.LogRecordPo
 	return db.appendLogRecord(record)
 }
 
-// 追加写入日志文件中
+// 追加写入日志文件中，方便writeBatch时不加锁
 func (db *DB) appendLogRecord(record *data.LogRecord) (*data.LogRecordPos, error) {
 	// 确保活跃文件存在
 	if db.activeFile == nil {
-		if err := db.setActiveDataFile(); err != nil {
+		if err := db.setNewActiveDataFile(); err != nil {
 			return nil, err
 		}
 	}
@@ -421,7 +422,7 @@ func (db *DB) appendLogRecord(record *data.LogRecord) (*data.LogRecordPos, error
 		db.olderFiles[db.activeFile.FileId] = db.activeFile
 
 		// 打开一个新的活跃文件
-		if err := db.setActiveDataFile(); err != nil {
+		if err := db.setNewActiveDataFile(); err != nil {
 			return nil, err
 		}
 	}
@@ -451,7 +452,7 @@ func (db *DB) appendLogRecord(record *data.LogRecord) (*data.LogRecordPos, error
 
 // 初始化当前活跃文件
 // 访问该方法前必须持有db互斥锁
-func (db *DB) setActiveDataFile() error {
+func (db *DB) setNewActiveDataFile() error {
 	var initialFileId uint32 = 0
 
 	if db.activeFile != nil {
