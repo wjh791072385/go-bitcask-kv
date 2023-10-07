@@ -22,6 +22,7 @@ const (
 	maxLogRecordHeaderSize = binary.MaxVarintLen32*2 + 5
 	minLogRecordHeaderSize = 4 + 1 + 1 + 1
 	logRecordTypeSize      = 1
+	maxLogRecordPosSize    = binary.MaxVarintLen32 + binary.MaxVarintLen64
 )
 
 // WAL日志记录的Header部分
@@ -84,17 +85,37 @@ func getLogRecordCRC(logRecord *LogRecord, headerBuf []byte) uint32 {
 	return crc
 }
 
+// LogRecordPos 数据内存索引
+type LogRecordPos struct {
+	Fid    uint32 //	文件id
+	Offset int64  // 文件偏移，和标准库中Write的类型保持一致int64
+}
+
+func EncodeLogRecordPos(pos *LogRecordPos) []byte {
+	buf := make([]byte, maxLogRecordPosSize)
+	var index = 0
+	index += binary.PutVarint(buf[index:], int64(pos.Fid))
+	index += binary.PutVarint(buf[index:], pos.Offset)
+	return buf[:index]
+}
+
+func DecodeLogRecordPos(buf []byte) *LogRecordPos {
+	var index = 0
+	fid, size := binary.Varint(buf[index:])
+	index += size
+
+	offset, _ := binary.Varint(buf[index:])
+	return &LogRecordPos{
+		Fid:    uint32(fid),
+		Offset: offset,
+	}
+}
+
 // LogRecord WAL日志记录
 type LogRecord struct {
 	Key   []byte
 	Value []byte
 	Type  LogRecordType
-}
-
-// LogRecordPos 数据内存索引
-type LogRecordPos struct {
-	Fid    uint32 //	文件id
-	Offset int64  // 文件偏移，和标准库中Write的类型保持一致int64
 }
 
 // EncodeLogRecord 对logRecord编码

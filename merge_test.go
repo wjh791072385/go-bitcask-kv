@@ -16,5 +16,5 @@ func TestDB_Merge(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, db)
 
-	t.Log(db.getMergePath())
+	//t.Log(db.getMergePath())
 }

@@ -15,8 +15,14 @@ type SegDataFile struct {
 	IoManager fio.IOManager // IO管理结构
 }
 
-const SegDataFileNamePrefix = "bitcask_"
-const SegDataFileNameSuffix = ".data"
+const (
+	SegDataFileNameSuffix = ".data"
+	SegDataFileNamePrefix = "bitcask_"
+	hintFileName          = "hint_index"
+	hintFileId            = 0
+	MergeFinishedFileName = "merge_finished"
+	MergeFinishedId       = 0
+)
 
 var (
 	ErrInvalidCRC = errors.New("invalid crc value, log record maybe corrupted")
@@ -24,10 +30,27 @@ var (
 
 // OpenDataFile 打开新的日志文件
 func OpenDataFile(path string, fileId uint32) (*SegDataFile, error) {
-	filename := filepath.Join(path, SegDataFileNamePrefix+fmt.Sprintf("%09d", fileId)+SegDataFileNameSuffix)
+	fileName := GetDataFileName(path, fileId)
+	return newDataFile(fileName, fileId)
+}
 
+func GetDataFileName(path string, fileId uint32) string {
+	return filepath.Join(path, SegDataFileNamePrefix+fmt.Sprintf("%09d", fileId)+SegDataFileNameSuffix)
+}
+
+func OpenHintFile(path string) (*SegDataFile, error) {
+	fileName := filepath.Join(path, hintFileName)
+	return newDataFile(fileName, hintFileId)
+}
+
+func OpenMergeFinishedFile(path string) (*SegDataFile, error) {
+	fileName := filepath.Join(path, MergeFinishedFileName)
+	return newDataFile(fileName, MergeFinishedId)
+}
+
+func newDataFile(fileName string, fileId uint32) (*SegDataFile, error) {
 	// 初始化IOManager管理接口
-	ioManager, err := fio.NewIOManager(filename, fio.StandardIO)
+	ioManager, err := fio.NewIOManager(fileName, fio.StandardIO)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +107,7 @@ func (df *SegDataFile) ReadLogRecord(offset int64) (*LogRecord, int64, error) {
 
 	// 读取数据部分
 	// 这里没有交由DecodeLogRecord处理，因为整个logRecord占用的buf大小没办法一开始确定
-	//databuf, err := df.readNBytes(keySize + valueSize, offset + headSize)
+	//dataBuf, err := df.readNBytes(keySize + valueSize, offset + headSize)
 	//if err != nil {
 	//	return nil, 0, err
 	//}
@@ -130,7 +153,6 @@ func (df *SegDataFile) Close() error {
 	return df.IoManager.Close()
 }
 
-// todo 将Read Write统一
 func (df *SegDataFile) Write(buf []byte) error {
 	n, err := df.IoManager.Write(buf)
 	if err != nil {
@@ -142,3 +164,7 @@ func (df *SegDataFile) Write(buf []byte) error {
 
 	return nil
 }
+
+//func (df *SegDataFile) WriteHintRecord(key []byte, pos *LogRecordPos) error {
+//	return nil
+//}

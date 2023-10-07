@@ -3,7 +3,6 @@ package bitcaskKV
 import (
 	"github.com/stretchr/testify/assert"
 	"go-bitcask-kv/utils"
-
 	"os"
 	"testing"
 )
@@ -18,6 +17,10 @@ func destroyDB(db *DB) {
 			panic(err)
 		}
 	}
+}
+
+func TestGoFunction(t *testing.T) {
+
 }
 
 func TestOpen(t *testing.T) {
