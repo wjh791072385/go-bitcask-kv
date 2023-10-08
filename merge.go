@@ -185,8 +185,10 @@ func (db *DB) loadMergeFiles() error {
 	}
 
 	// 加载完成之后删除merge目录
-	defer func(){
-		_ := os.RemoveAll(mergePath)
+	defer func() {
+		if err := os.RemoveAll(mergePath); err != nil {
+			panic("delete merge directory failed")
+		}
 	}()
 
 	// 加载目录下的每个文件
@@ -212,14 +214,14 @@ func (db *DB) loadMergeFiles() error {
 	}
 
 	// 找到最大的没有merge的文件id，将已经merge的文件进行删除
-	nonMergeFileid, err := db.getNonMergeFileId(mergePath)
+	nonMergeFileId, err := db.getNonMergeFileId(mergePath)
 	if err != nil {
 		return err
 	}
 
 	// 删除旧的数据文件
 	var fileId uint32 = 0
-	for ; fileId < nonMergeFileid; fileId++ {
+	for ; fileId < nonMergeFileId; fileId++ {
 		fileName := data.GetDataFileName(db.option.DirPath, fileId)
 		if _, err := os.Stat(fileName); os.IsNotExist(err) {
 			continue
@@ -233,7 +235,7 @@ func (db *DB) loadMergeFiles() error {
 	}
 
 	// 将merge目录下的新文件移动到db.option.DirPath中
-	for _, fileName := mergeFileNames {
+	for _, fileName := range mergeFileNames {
 		srcPath := filepath.Join(mergePath, fileName)
 		desPath := filepath.Join(db.option.DirPath, fileName)
 
@@ -247,11 +249,40 @@ func (db *DB) loadMergeFiles() error {
 }
 
 // 加载索引文件
-func (db *DB)loadIndexFromHintFile() error {
-	
+func (db *DB) loadIndexFromHintFile() error {
+	hintFileName := filepath.Join(db.option.DirPath, data.HintFileName)
+	if _, err := os.Stat(hintFileName); os.IsNotExist(err) {
+		return nil
+	}
+
+	hintFile, err := data.OpenHintFile(db.option.DirPath)
+	if err != nil {
+		return err
+	}
+
+	// 读取文件中的索引
+	var offset int64 = 0
+	for {
+		logRecord, size, err := hintFile.ReadLogRecord(offset)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		pos := data.DecodeLogRecordPos(logRecord.Value)
+
+		// hint文件中存的是realKey, 不需要处理事务id
+		db.index.Put(logRecord.Key, pos)
+
+		offset += size
+	}
+
+	return nil
 }
 
-func (db *DB) getNonMergeFileId(mergePath string) (uint32, error){
+func (db *DB) getNonMergeFileId(mergePath string) (uint32, error) {
 	mergeFinishedFile, err := data.OpenMergeFinishedFile(mergePath)
 	if err != nil {
 		return 0, err

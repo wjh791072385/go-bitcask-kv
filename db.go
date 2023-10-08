@@ -6,6 +6,7 @@ import (
 	"go-bitcask-kv/index"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,9 +46,18 @@ func Open(option Option) (*DB, error) {
 		olderFiles: make(map[uint32]*data.SegDataFile),
 		index:      index.NewIndexer(option.IndexType),
 	}
+	// 加载merge文件
+	if err := db.loadMergeFiles(); err != nil {
+		return nil, err
+	}
 
 	// 加载数据文件，打开对应的数据文件指针
 	if err := db.loadDataFiles(); err != nil {
+		return nil, err
+	}
+
+	// 从hint文件中加载索引信息
+	if err := db.loadIndexFromHintFile(); err != nil {
 		return nil, err
 	}
 
@@ -297,6 +307,19 @@ func (db *DB) loadIndexFromDataFiles() error {
 		return nil
 	}
 
+	// 判断是否发生过merge
+	hasMerge, nonMergeFileId := false, uint32(0)
+	mergeFinishedFileName := filepath.Join(db.option.DirPath, data.MergeFinishedFileName)
+	if _, err := os.Stat(mergeFinishedFileName); err == nil {
+		// 如果存在则置为true
+		fid, err := db.getNonMergeFileId(db.option.DirPath)
+		if err != nil {
+			return err
+		}
+		hasMerge = true
+		nonMergeFileId = fid
+	}
+
 	// 更新内存索引辅助函数
 	updateIndex := func(key []byte, typ data.LogRecordType, pos *data.LogRecordPos) {
 		var ok bool
@@ -321,6 +344,12 @@ func (db *DB) loadIndexFromDataFiles() error {
 	// 遍历所有的文件id，处理文件中的记录
 	for _, fid := range db.fileIds {
 		var fileId = uint32(fid)
+
+		// 如果加载过hint文件，则跳过已经merge过的文件
+		if hasMerge && fileId < nonMergeFileId {
+			continue
+		}
+
 		var dataFile *data.SegDataFile
 		if fileId == db.activeFile.FileId {
 			dataFile = db.activeFile

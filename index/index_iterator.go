@@ -7,6 +7,9 @@ type IndexerIterator interface {
 	Rewind()
 
 	// Seek 根据传入的key, 需要第一个大于（小于）等于key的迭代器
+	// TODO 是否有效率更高的方法来实现Seek ？
+	// 如果不需要Seek，完全可以通过B树或者ART自带的迭代器来支持
+	// 要支持范围查询，似乎必须有Seek，使用B+树或者是更好的选择？
 	Seek(key []byte)
 
 	// Next 跳转到下一个key

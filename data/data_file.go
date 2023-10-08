@@ -18,8 +18,8 @@ type SegDataFile struct {
 const (
 	SegDataFileNameSuffix = ".data"
 	SegDataFileNamePrefix = "bitcask_"
-	hintFileName          = "hint_index"
-	hintFileId            = 0
+	HintFileName          = "hint_index"
+	HintFileId            = 0
 	MergeFinishedFileName = "merge_finished"
 	MergeFinishedId       = 0
 )
@@ -39,8 +39,8 @@ func GetDataFileName(path string, fileId uint32) string {
 }
 
 func OpenHintFile(path string) (*SegDataFile, error) {
-	fileName := filepath.Join(path, hintFileName)
-	return newDataFile(fileName, hintFileId)
+	fileName := filepath.Join(path, HintFileName)
+	return newDataFile(fileName, HintFileId)
 }
 
 func OpenMergeFinishedFile(path string) (*SegDataFile, error) {

@@ -7,8 +7,11 @@ import (
 type IndexerType = int8
 
 const (
-	// BtreeIndex 索引
+	// BtreeIndex B树索引
 	BtreeIndex IndexerType = iota + 1
+
+	// ARTIndex 自适应基数索引
+	ARTIndex
 
 	// 后续可扩展
 )
@@ -33,6 +36,8 @@ func NewIndexer(typ IndexerType) Indexer {
 	switch typ {
 	case BtreeIndex:
 		return NewBtreeIndexer()
+	case ARTIndex:
+		return NewART()
 	default:
 		panic("unSupported index type")
 	}
