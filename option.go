@@ -19,6 +19,9 @@ type Option struct {
 
 	// 索引类型
 	IndexType index.IndexerType
+
+	// 持久化索引存放路径，特制B+Tree
+	indexPath string
 }
 
 // IteratorOption 指定迭代器配置项
@@ -50,6 +53,9 @@ var DefaultOption = Option{
 
 	// 默认BTree索引
 	IndexType: index.BtreeIndex,
+
+	// 默认使用BTree索引，为内存索引，不需要持久化路径
+	indexPath: "",
 }
 
 var DefaultIteratorOption = IteratorOption{

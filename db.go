@@ -44,7 +44,7 @@ func Open(option Option) (*DB, error) {
 		option:     option,
 		mu:         new(sync.RWMutex),
 		olderFiles: make(map[uint32]*data.SegDataFile),
-		index:      index.NewIndexer(option.IndexType),
+		index:      index.NewIndexer(option.IndexType, option.indexPath),
 	}
 	// 加载merge文件
 	if err := db.loadMergeFiles(); err != nil {
