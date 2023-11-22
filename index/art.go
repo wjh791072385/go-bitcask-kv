@@ -55,6 +55,10 @@ func (art *AdaptiveRadixTree) Size() int {
 	return art.Size()
 }
 
+func (art *AdaptiveRadixTree) Close() error {
+	return nil
+}
+
 // ARTIterator ART索引迭代器
 type ARTIterator struct {
 	// 当前下标

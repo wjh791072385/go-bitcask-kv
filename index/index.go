@@ -33,6 +33,9 @@ type Indexer interface {
 	Iterator(reverse bool) IndexerIterator
 
 	Size() int
+
+	// Close 只是对于B+树才需要， 因为这里B+树借用了一个DB的实现
+	Close() error
 }
 
 func NewIndexer(typ IndexerType, dirpath string) Indexer {

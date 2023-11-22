@@ -170,8 +170,7 @@ func (bpi *BPlusTreeIterator) Value() *data.LogRecordPos {
 }
 
 func (bpi *BPlusTreeIterator) Close() {
-	//_ = bpi.tx.Commit()
-	// 迭代器只允许可读  不能commit
-	// commit会卡死  暂时不知道为什么
+	// Rollback closes the transaction and ignores all previous updates. Read-only
+	// transactions must be rolled back and not committed.
 	_ = bpi.tx.Rollback()
 }

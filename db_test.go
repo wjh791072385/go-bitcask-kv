@@ -1,6 +1,7 @@
 package bitcaskKV
 
 import (
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"go-bitcask-kv/utils"
 	"os"
@@ -19,7 +20,26 @@ func destroyDB(db *DB) {
 	}
 }
 
+func sum(nums ...int) {
+	fmt.Println(len(nums))
+	for i, v := range nums {
+		fmt.Println(i, v)
+	}
+
+}
+
+func prin(strs ...string) {
+	for i, v := range strs {
+		fmt.Println(i, v)
+	}
+}
+
 func TestGoFunction(t *testing.T) {
+	nums := []int{1, 2, 3, 4}
+	sum(nums...)
+
+	strs := []string{"hel", "sss"}
+	prin(strs...)
 
 }
 
@@ -31,6 +51,7 @@ func TestOpen(t *testing.T) {
 	defer destroyDB(db)
 	assert.Nil(t, err)
 	assert.NotNil(t, db)
+
 }
 
 func TestDB_Put(t *testing.T) {

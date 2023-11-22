@@ -66,6 +66,10 @@ func (bt *Btree) Size() int {
 	return bt.tree.Len()
 }
 
+func (bt *Btree) Close() error {
+	return nil
+}
+
 // Item 实现Btree的节点
 type Item struct {
 	key []byte

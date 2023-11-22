@@ -14,38 +14,53 @@ import (
 )
 
 // DB bitcask storage engine instance
+// It is also a log-structure storage
 type DB struct {
-	option     Option
-	mu         *sync.RWMutex
-	activeFile *data.SegDataFile            // 当前活跃文件，可写入
-	olderFiles map[uint32]*data.SegDataFile // immutable文件
-	fileIds    []int                        // 用于fileId的排序
-	index      index.Indexer                // 内存索引结构
-	seqNo      uint64                       // batch递增序号
-	isMerging  bool                         // 标识是否正在进行Merge
+	option Option
+	mu     *sync.RWMutex
+
+	// active file can be written
+	activeFile *data.SegDataFile
+
+	// older files are immutable. It maintains FileId to log
+	olderFiles map[uint32]*data.SegDataFile
+
+	// fileIds is used for sorting
+	fileIds []int
+
+	index index.Indexer
+
+	// WriteBatch Sequence Number
+	seqNo uint64
+
+	// when true, the DB is merging.
+	// Only one Merge operation can run at a time
+	isMerging bool
 }
 
-// Open 打开存储引擎实例
+// Open creates and opens a DB instance with specified option
 func Open(option Option) (*DB, error) {
-	// 参数校验
+	// option check
 	if err := checkOptions(option); err != nil {
 		return nil, err
 	}
 
-	// 目录校验，如果不存在则创建
+	// check directory if exists.
+	// if not exists, create it.
 	if _, err := os.Stat(option.DirPath); os.IsNotExist(err) {
 		if err := os.MkdirAll(option.DirPath, os.ModePerm); err != nil {
 			return nil, err
 		}
 	}
 
-	// 初始化DB结构体
+	// Initialize DB
 	db := &DB{
 		option:     option,
 		mu:         new(sync.RWMutex),
 		olderFiles: make(map[uint32]*data.SegDataFile),
 		index:      index.NewIndexer(option.IndexType, option.indexPath),
 	}
+
 	// 加载merge文件
 	if err := db.loadMergeFiles(); err != nil {
 		return nil, err
@@ -56,15 +71,21 @@ func Open(option Option) (*DB, error) {
 		return nil, err
 	}
 
-	// 从hint文件中加载索引信息
-	if err := db.loadIndexFromHintFile(); err != nil {
-		return nil, err
+	// 只有内存索引需要加载索引文件，B+树的实现是持久化的，由它自己维护持久化索引
+	if db.option.IndexType != index.BPlusTreeIndex {
+		// 从hint文件中加载索引信息
+		if err := db.loadIndexFromHintFile(); err != nil {
+			return nil, err
+		}
+
+		// 从数据文件中加载数据索引 维护在内存中
+		if err := db.loadIndexFromDataFiles(); err != nil {
+			return nil, err
+		}
 	}
 
-	// 从数据文件中加载数据索引 维护在内存中
-	if err := db.loadIndexFromDataFiles(); err != nil {
-		return nil, err
-	}
+	// 如果使用B+树索引的话，是需要单独持久化事务序列号，即db.seqNo，然后在读取的
+	// 之前使用加载的方式是从loadIndexFromDataFiles方法中更新最大的事务序列号的
 
 	return db, nil
 }
@@ -213,6 +234,9 @@ func (db *DB) Close() error {
 
 	db.mu.Lock()
 	defer db.mu.Unlock()
+
+	// 索引close 目前只针对B+树
+	db.index.Close()
 
 	// 关闭活跃文件
 	if err := db.activeFile.Close(); err != nil {
