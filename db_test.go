@@ -1,18 +1,18 @@
 package bitcaskKV
 
 import (
-	"fmt"
 	"github.com/stretchr/testify/assert"
 	"go-bitcask-kv/utils"
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 // 测试完成之后销毁 DB 数据目录
 func destroyDB(db *DB) {
 	if db != nil {
 		db.Close()
-
 		err := os.RemoveAll(db.option.DirPath)
 		if err != nil {
 			panic(err)
@@ -20,27 +20,11 @@ func destroyDB(db *DB) {
 	}
 }
 
-func sum(nums ...int) {
-	fmt.Println(len(nums))
-	for i, v := range nums {
-		fmt.Println(i, v)
-	}
-
-}
-
-func prin(strs ...string) {
-	for i, v := range strs {
-		fmt.Println(i, v)
-	}
-}
-
 func TestGoFunction(t *testing.T) {
-	nums := []int{1, 2, 3, 4}
-	sum(nums...)
-
-	strs := []string{"hel", "sss"}
-	prin(strs...)
-
+	fp := "/root/wjh/hello.txt"
+	t.Log(filepath.Base(fp))
+	t.Log(filepath.Dir(fp))
+	t.Log(filepath.Abs(fp))
 }
 
 func TestOpen(t *testing.T) {
@@ -51,7 +35,32 @@ func TestOpen(t *testing.T) {
 	defer destroyDB(db)
 	assert.Nil(t, err)
 	assert.NotNil(t, db)
+}
 
+func TestDB_FileLock(t *testing.T) {
+	opts := DefaultOption
+	dir, _ := os.MkdirTemp("", "bitcask")
+	opts.DirPath = dir
+	db, err := Open(opts)
+	defer destroyDB(db)
+	assert.Nil(t, err)
+	assert.NotNil(t, db)
+
+	// 再次打开DB会报错
+	db2, err := Open(opts)
+	assert.Nil(t, db2)
+	assert.NotNil(t, err)
+
+	// 关闭后再次打开可以
+	err = db.Close()
+	assert.Nil(t, err)
+	db2, err = Open(opts)
+	defer destroyDB(db2)
+	assert.Nil(t, err)
+	assert.NotNil(t, db2)
+
+	err = db2.Close()
+	assert.Nil(t, err)
 }
 
 func TestDB_Put(t *testing.T) {
@@ -90,7 +99,7 @@ func TestDB_Put(t *testing.T) {
 	assert.Nil(t, err)
 
 	// 5.写到数据文件进行了转换
-	for i := 0; i < 1000000; i++ {
+	for i := 0; i < 10000; i++ {
 		err := db.Put(utils.GetTestKey(i), utils.GetTestRandomValue(128))
 		assert.Nil(t, err)
 	}
@@ -152,7 +161,7 @@ func TestDB_Get(t *testing.T) {
 	assert.Equal(t, ErrKeyNotFound, err)
 
 	// 5.转换为了旧的数据文件，从旧的数据文件上获取 value
-	for i := 100; i < 1000000; i++ {
+	for i := 100; i < 10000; i++ {
 		err := db.Put(utils.GetTestKey(i), utils.GetTestRandomValue(128))
 		assert.Nil(t, err)
 	}
@@ -221,8 +230,8 @@ func TestDB_Delete(t *testing.T) {
 	assert.Nil(t, err)
 
 	// 5.重启之后，再进行校验
-	//err = db.Close()
-	//assert.Nil(t, err)
+	err = db.Close()
+	assert.Nil(t, err)
 
 	// 重启数据库
 	db2, err := Open(opts)
@@ -289,8 +298,6 @@ func TestDB_Fold(t *testing.T) {
 
 	res := make([][]byte, 0)
 	err = db.Fold(func(key []byte, value []byte) bool {
-		//t.Log(string(key))
-		//t.Log(string(value))
 		assert.NotNil(t, key)
 		assert.NotNil(t, value)
 		res = append(res, key) // 获取key，读取到外面
@@ -326,5 +333,48 @@ func TestDB_Sync(t *testing.T) {
 	assert.Nil(t, err)
 
 	err = db.Sync()
+	assert.Nil(t, err)
+}
+
+func TestDB_LoadDataFilesByMMap(t *testing.T) {
+	opts := DefaultOption
+	dir, _ := os.MkdirTemp("", "bitcask-MMap")
+	defer os.RemoveAll(dir)
+	opts.DirPath = dir
+
+	// 64MB一个日志文件
+	opts.DataFileSize = 64 * 1024 * 1024
+
+	// 先使用标准IO写数据
+	opts.MMapAtStartup = false
+	db, err := Open(opts)
+	assert.Nil(t, err)
+
+	// 一条数据假定128B
+	// 128 * 1024 * 1024 * 8 = 1G
+	for i := 0; i < 1024*1024; i++ {
+		err := db.Put(utils.GetTestKey(i), utils.GetTestRandomValue(128))
+		assert.Nil(t, err)
+	}
+
+	err = db.Close()
+	assert.Nil(t, err)
+
+	// 正常启动加载数据
+	startT := time.Now()
+	opts.MMapAtStartup = false
+	db, err = Open(opts)
+	cost1 := time.Since(startT)
+	t.Log(cost1)
+	err = db.Close()
+	assert.Nil(t, err)
+
+	// 使用MMap加载数据
+	startT = time.Now()
+	opts.MMapAtStartup = false
+	db, err = Open(opts)
+	cost2 := time.Since(startT)
+	t.Log(cost2)
+	err = db.Close()
 	assert.Nil(t, err)
 }

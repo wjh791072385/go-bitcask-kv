@@ -3,6 +3,7 @@ package data
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"go-bitcask-kv/fio"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,23 +17,23 @@ func destoryFile(path string, fileId uint32) {
 }
 
 func TestSegOpenDataFile(t *testing.T) {
-	dataFile, err := OpenDataFile(os.TempDir(), 0)
+	dataFile, err := OpenDataFile(os.TempDir(), 0, fio.StandardIO)
 	defer destoryFile(os.TempDir(), 0)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile)
 
-	dataFile1, err := OpenDataFile(os.TempDir(), 0)
+	dataFile1, err := OpenDataFile(os.TempDir(), 0, fio.StandardIO)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile1)
 
-	dataFile2, err := OpenDataFile(os.TempDir(), 111)
+	dataFile2, err := OpenDataFile(os.TempDir(), 111, fio.StandardIO)
 	defer destoryFile(os.TempDir(), 111)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile2)
 }
 
 func TestSegDataFile_Write(t *testing.T) {
-	dataFile, err := OpenDataFile(os.TempDir(), 0)
+	dataFile, err := OpenDataFile(os.TempDir(), 0, fio.StandardIO)
 	destoryFile(os.TempDir(), 0)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile)
@@ -45,7 +46,7 @@ func TestSegDataFile_Write(t *testing.T) {
 }
 
 func TestSegDataFile_ReadLogRecord(t *testing.T) {
-	dataFile, err := OpenDataFile(os.TempDir(), 0)
+	dataFile, err := OpenDataFile(os.TempDir(), 0, fio.StandardIO)
 	destoryFile(os.TempDir(), 0)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile)

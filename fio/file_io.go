@@ -38,6 +38,7 @@ func (fio *FileIO) Close() error {
 }
 
 func (fio *FileIO) Size() (int64, error) {
+	// 返回当前文件大小
 	stat, err := fio.fd.Stat()
 	if err != nil {
 		return 0, err

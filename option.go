@@ -5,6 +5,10 @@ import (
 	"os"
 )
 
+const (
+	fileLockName = "flock"
+)
+
 // Option 存储引擎配置项
 type Option struct {
 	// 数据存放目录
@@ -15,12 +19,19 @@ type Option struct {
 	DataFileSize int64
 
 	// 用于控制每次写入数据是否持久化
+	// 一般为false，都是后续批量持久化, 即no-force
 	SyncWrites bool
+
+	// 使用共享内存加载数据文件
+	MMapAtStartup bool
+
+	// 累积大于多少字节进行一次持久化
+	BytesPerSync uint
 
 	// 索引类型
 	IndexType index.IndexerType
 
-	// 持久化索引存放路径，特制B+Tree
+	// 持久化索引存放路径，主要针对B+Tree，暂时不做实现
 	indexPath string
 }
 
@@ -50,6 +61,9 @@ var DefaultOption = Option{
 
 	// 默认不同步刷新
 	SyncWrites: false,
+
+	// 默认使用MMap加载数据文件
+	MMapAtStartup: true,
 
 	// 默认BTree索引
 	IndexType: index.BtreeIndex,

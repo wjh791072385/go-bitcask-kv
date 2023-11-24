@@ -6,6 +6,7 @@ type IOType = int8
 
 const (
 	StandardIO IOType = iota + 1
+	MemoryIO
 )
 
 // IOManager 抽象IO管理接口，方便接入不同的IO，目前项目实现使用标准IO
@@ -31,7 +32,9 @@ func NewIOManager(fileName string, typ IOType) (IOManager, error) {
 	switch typ {
 	case StandardIO:
 		return NewFileIOManager(fileName)
+	case MemoryIO:
+		return NewMMapIoManager(fileName)
 	default:
-		panic("unsurportted IO type")
+		panic("unsupported IO type")
 	}
 }

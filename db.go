@@ -2,7 +2,10 @@ package bitcaskKV
 
 import (
 	"errors"
+	"fmt"
+	"github.com/gofrs/flock"
 	"go-bitcask-kv/data"
+	"go-bitcask-kv/fio"
 	"go-bitcask-kv/index"
 	"io"
 	"os"
@@ -36,6 +39,15 @@ type DB struct {
 	// when true, the DB is merging.
 	// Only one Merge operation can run at a time
 	isMerging bool
+
+	// when ture, the DB is successfully started
+	isInitial bool
+
+	// file lock ensure one DB instance processing
+	fileLock *flock.Flock
+
+	// the number of bytes written, but has not been persistent
+	bytesWrite uint
 }
 
 // Open creates and opens a DB instance with specified option
@@ -53,39 +65,60 @@ func Open(option Option) (*DB, error) {
 		}
 	}
 
+	// try to get file lock
+	fileLock := flock.New(filepath.Join(option.DirPath, fileLockName))
+	hold, err := fileLock.TryLock()
+	if err != nil {
+		return nil, err
+	}
+
+	// 如果获取不到说明已经有其他的DB实例占用了该目录
+	if !hold {
+		return nil, ErrDatabaseIsUsing
+	}
+
 	// Initialize DB
 	db := &DB{
 		option:     option,
 		mu:         new(sync.RWMutex),
 		olderFiles: make(map[uint32]*data.SegDataFile),
 		index:      index.NewIndexer(option.IndexType, option.indexPath),
+		fileLock:   fileLock,
 	}
 
-	// 加载merge文件
+	// load MergeFiles
 	if err := db.loadMergeFiles(); err != nil {
 		return nil, err
 	}
 
-	// 加载数据文件，打开对应的数据文件指针
+	// load DataFiles and open the data file pointer
+	// use memory map IO
 	if err := db.loadDataFiles(); err != nil {
 		return nil, err
 	}
 
-	// 只有内存索引需要加载索引文件，B+树的实现是持久化的，由它自己维护持久化索引
+	// Only the memory index need to load index file
+	// the B+Tree index is persistent, maintain the persistent index by itself
+	// If choose B+Tree persistent index, need to get the seqNo(transaction serial number)
 	if db.option.IndexType != index.BPlusTreeIndex {
-		// 从hint文件中加载索引信息
+		// Firstly, load index from hintFile
 		if err := db.loadIndexFromHintFile(); err != nil {
 			return nil, err
 		}
 
-		// 从数据文件中加载数据索引 维护在内存中
+		// Secondly, load index from DateFiles(never be merged)
 		if err := db.loadIndexFromDataFiles(); err != nil {
 			return nil, err
 		}
 	}
 
-	// 如果使用B+树索引的话，是需要单独持久化事务序列号，即db.seqNo，然后在读取的
-	// 之前使用加载的方式是从loadIndexFromDataFiles方法中更新最大的事务序列号的
+	// 如果使用MMap加载数据文件
+	// 读取完之后重置为标准IO, MMap仅仅用于数据加载
+	if db.option.MMapAtStartup {
+		db.resetIOType(fio.StandardIO)
+	}
+
+	db.isInitial = true
 
 	return db, nil
 }
@@ -227,6 +260,13 @@ func (db *DB) Delete(key []byte) error {
 }
 
 func (db *DB) Close() error {
+	// 在最后释放文件锁
+	defer func() {
+		if err := db.fileLock.Unlock(); err != nil {
+			panic(fmt.Sprintf("failed to unlock the directory %s and error is %v", db.option.DirPath, err))
+		}
+	}()
+
 	if db.activeFile == nil {
 		// 说明都没启动
 		return nil
@@ -303,9 +343,14 @@ func (db *DB) loadDataFiles() error {
 	// 对文件id排序，依次加载
 	sort.Ints(db.fileIds)
 
+	ioType := fio.StandardIO
+	if db.option.MMapAtStartup {
+		ioType = fio.MemoryIO
+	}
+
 	// 遍历文件id，打开所有的数据文件
 	for i, fid := range db.fileIds {
-		datafile, err := data.OpenDataFile(db.option.DirPath, uint32(fid))
+		datafile, err := data.OpenDataFile(db.option.DirPath, uint32(fid), ioType)
 		if err != nil {
 			return nil
 		}
@@ -466,7 +511,7 @@ func (db *DB) appendLogRecord(record *data.LogRecord) (*data.LogRecordPos, error
 
 	// 如果超过了文件阈值，active文件转为older文件，新建一个active文件
 	if db.activeFile.WriteOff+size > db.option.DataFileSize {
-		// 活跃文件刷盘
+		// 当前活跃文件刷盘
 		if err := db.activeFile.Sync(); err != nil {
 			return nil, err
 		}
@@ -486,11 +531,25 @@ func (db *DB) appendLogRecord(record *data.LogRecord) (*data.LogRecordPos, error
 		return nil, err
 	}
 
-	// 根据配置判断对单次写入是否持久化
-	// 一般都是后续批量持久化, 即no-force
-	if db.option.SyncWrites {
+	// 累积每次写入的字节数
+	db.bytesWrite += uint(size)
+
+	// 持久化判断, 初始化为配置项
+	needSync := db.option.SyncWrites
+
+	// 不是每次持久化，而是根据累积字节数持久化
+	// 这里后续可以抽象出一个方法，持久化策略选择
+	if !needSync && db.option.BytesPerSync > 0 && db.bytesWrite >= db.option.BytesPerSync {
+		needSync = true
+	}
+
+	if needSync {
 		if err := db.activeFile.Sync(); err != nil {
 			return nil, err
+		}
+
+		if db.bytesWrite > 0 {
+			db.bytesWrite = 0
 		}
 	}
 
@@ -513,11 +572,28 @@ func (db *DB) setNewActiveDataFile() error {
 		initialFileId = db.activeFile.FileId + 1
 	}
 
-	dataFile, err := data.OpenDataFile(db.option.DirPath, initialFileId)
+	dataFile, err := data.OpenDataFile(db.option.DirPath, initialFileId, fio.StandardIO)
 	if err != nil {
 		return err
 	}
 
 	db.activeFile = dataFile
+	return nil
+}
+
+func (db *DB) resetIOType(ioType fio.IOType) error {
+	if db.activeFile == nil {
+		return nil
+	}
+
+	if err := db.activeFile.SetIOManager(db.option.DirPath, ioType); err != nil {
+		return err
+	}
+
+	for _, datafile := range db.olderFiles {
+		if err := datafile.SetIOManager(db.option.DirPath, ioType); err != nil {
+			return err
+		}
+	}
 	return nil
 }

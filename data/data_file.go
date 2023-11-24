@@ -29,9 +29,9 @@ var (
 )
 
 // OpenDataFile 打开新的日志文件
-func OpenDataFile(path string, fileId uint32) (*SegDataFile, error) {
+func OpenDataFile(path string, fileId uint32, ioType fio.IOType) (*SegDataFile, error) {
 	fileName := GetDataFileName(path, fileId)
-	return newDataFile(fileName, fileId)
+	return newDataFile(fileName, fileId, ioType)
 }
 
 func GetDataFileName(path string, fileId uint32) string {
@@ -40,17 +40,17 @@ func GetDataFileName(path string, fileId uint32) string {
 
 func OpenHintFile(path string) (*SegDataFile, error) {
 	fileName := filepath.Join(path, HintFileName)
-	return newDataFile(fileName, HintFileId)
+	return newDataFile(fileName, HintFileId, fio.StandardIO)
 }
 
 func OpenMergeFinishedFile(path string) (*SegDataFile, error) {
 	fileName := filepath.Join(path, MergeFinishedFileName)
-	return newDataFile(fileName, MergeFinishedId)
+	return newDataFile(fileName, MergeFinishedId, fio.StandardIO)
 }
 
-func newDataFile(fileName string, fileId uint32) (*SegDataFile, error) {
+func newDataFile(fileName string, fileId uint32, ioType fio.IOType) (*SegDataFile, error) {
 	// 初始化IOManager管理接口
-	ioManager, err := fio.NewIOManager(fileName, fio.StandardIO)
+	ioManager, err := fio.NewIOManager(fileName, ioType)
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +162,23 @@ func (df *SegDataFile) Write(buf []byte) error {
 	// 更新WriteOff
 	df.WriteOff += int64(n)
 
+	return nil
+}
+
+// SetIOManager 设置对应的IOManager
+func (df *SegDataFile) SetIOManager(path string, ioType fio.IOType) error {
+	// 先关闭
+	if err := df.IoManager.Close(); err != nil {
+		return err
+	}
+
+	// 再重新打开
+	ioManager, err := fio.NewIOManager(GetDataFileName(path, df.FileId), ioType)
+	if err != nil {
+		return err
+	}
+
+	df.IoManager = ioManager
 	return nil
 }
 
