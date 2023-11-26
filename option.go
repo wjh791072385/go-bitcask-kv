@@ -33,6 +33,18 @@ type Option struct {
 
 	// 持久化索引存放路径，主要针对B+Tree，暂时不做实现
 	indexPath string
+
+	// merge空间最多占用剩余空间系数
+	mergeSpaceRatioThr float32
+
+	// merge操作无效数据占总数据比例阈值
+	mergeRatioThr float32
+
+	// merge操作 最小大小阈值
+	mergeMinSizeThr uint32
+
+	// merge操作 最大大小阈值
+	mergeMaxSizeThr uint32
 }
 
 // IteratorOption 指定迭代器配置项
@@ -70,6 +82,16 @@ var DefaultOption = Option{
 
 	// 默认使用BTree索引，为内存索引，不需要持久化路径
 	indexPath: "",
+
+	mergeSpaceRatioThr: 0.8,
+
+	mergeRatioThr: 0.3,
+
+	// 最小64M开始merge
+	mergeMinSizeThr: 64 * 1024 * 1024,
+
+	// 超过256M则需要merge
+	mergeMaxSizeThr: 256 * 1024 * 1024,
 }
 
 var DefaultIteratorOption = IteratorOption{

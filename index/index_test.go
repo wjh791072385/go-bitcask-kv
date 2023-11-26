@@ -54,54 +54,96 @@ func clearBPlusTree() {
 }
 
 func TestIndex_Put(t *testing.T) {
-	//res1 := index.Put(nil, &data.LogRecordPos{Fid: 1, Offset: 100})
-	//assert.True(t, res1)
+	// 不允许key为nil，art中key为nil后，删除时无法删除
+	//是否允许key为nil, 测试完后删除nil
+	//res1, updated := index.Put(nil, &data.LogRecordPos{Fid: 1, Offset: 100})
+	//assert.Nil(t, res1)
+	//assert.False(t, updated)
+	//_, deleted := index.Delete(nil)
+	//assert.True(t, deleted)
+	//t.Log(deleted)
 
-	res2 := index.Put([]byte("abc"), &data.LogRecordPos{Fid: 100, Offset: 10010})
-	assert.True(t, res2)
+	res2, updated := index.Put([]byte("put1"), &data.LogRecordPos{Fid: 100, Offset: 10010})
+	assert.Nil(t, res2)
+	assert.False(t, updated)
+
+	res3, updated := index.Put([]byte("put2"), &data.LogRecordPos{Fid: 1, Offset: 2})
+	assert.Nil(t, res3)
+	assert.False(t, updated)
+
+	// 重复的key会获取到之前的记录
+	res4, updated := index.Put([]byte("put2"), &data.LogRecordPos{Fid: 3, Offset: 4})
+	assert.NotNil(t, res4)
+	assert.True(t, updated)
+	assert.Equal(t, uint32(1), res4.Fid)
+	assert.Equal(t, int64(2), res4.Offset)
+
+	// 清理掉自己的元素
+	_, deleted := index.Delete([]byte("put1"))
+	assert.True(t, deleted)
+	_, deleted = index.Delete([]byte("put2"))
+	assert.True(t, deleted)
+
 }
 
 func TestIndex_Get(t *testing.T) {
-	// 不需要测试写入key为nil，因为DB层面的put会禁止nil的key
-	//res1 := index.Put(nil, &data.LogRecordPos{Fid: 1, Offset: 100})
-	//assert.True(t, res1)
+	//// 是否允许key为nil
+	// 不允许
+	//res1, updated := index.Put(nil, &data.LogRecordPos{Fid: 1, Offset: 100})
+	//assert.Nil(t, res1)
+	//assert.False(t, updated)
 	//
 	//data1 := index.Get(nil)
 	//assert.Equal(t, uint32(1), data1.Fid)
 	//assert.Equal(t, int64(100), data1.Offset)
+	//_, deleted := index.Delete(nil)
+	//assert.True(t, deleted)
 
 	// 测试写入 读取
-	res2 := index.Put([]byte("abc"), &data.LogRecordPos{Fid: 100, Offset: 10010})
-	assert.True(t, res2)
+	res2, updated := index.Put([]byte("get1"), &data.LogRecordPos{Fid: 100, Offset: 10010})
+	assert.Nil(t, res2)
+	assert.False(t, updated)
 
-	data2 := index.Get([]byte("abc"))
+	data2 := index.Get([]byte("get1"))
 	assert.Equal(t, uint32(100), data2.Fid)
 	assert.Equal(t, int64(10010), data2.Offset)
 
-	// 测试覆盖
-	res2 = index.Put([]byte("abc"), &data.LogRecordPos{Fid: 888, Offset: 7777})
-	assert.True(t, res2)
-	data2 = index.Get([]byte("abc"))
+	// 测试覆盖, 会得到之前的数据
+	res2, updated = index.Put([]byte("get1"), &data.LogRecordPos{Fid: 888, Offset: 7777})
+	assert.NotNil(t, res2)
+	assert.True(t, updated)
+	assert.Equal(t, uint32(100), res2.Fid)
+	assert.Equal(t, int64(10010), res2.Offset)
+
+	data2 = index.Get([]byte("get1"))
 	assert.Equal(t, uint32(888), data2.Fid)
 	assert.Equal(t, int64(7777), data2.Offset)
+
+	_, deleted := index.Delete([]byte("get1"))
+	assert.True(t, deleted)
 }
 
 func TestIndex_Delete(t *testing.T) {
 	// 删除不存在的元素
-	res := index.Delete([]byte("io"))
-	assert.False(t, res)
+	res, deleted := index.Delete([]byte("no-exist"))
+	assert.Nil(t, res)
+	assert.False(t, deleted)
 
 	// 删除正常元素
-	res1 := index.Put([]byte("abc"), &data.LogRecordPos{Fid: 100, Offset: 10010})
-	assert.True(t, res1)
+	res1, _ := index.Put([]byte("delete1"), &data.LogRecordPos{Fid: 100, Offset: 10010})
+	assert.Nil(t, res1)
 
-	data1 := index.Get([]byte("abc"))
+	data1 := index.Get([]byte("delete1"))
 	assert.Equal(t, uint32(100), data1.Fid)
 	assert.Equal(t, int64(10010), data1.Offset)
 
-	res1 = index.Delete([]byte("abc"))
-	assert.True(t, res1)
-	data1 = index.Get([]byte("abc"))
+	res1, deleted = index.Delete([]byte("delete1"))
+	assert.NotNil(t, res1)
+	assert.True(t, deleted)
+	assert.Equal(t, uint32(100), res1.Fid)
+	assert.Equal(t, int64(10010), res1.Offset)
+
+	data1 = index.Get([]byte("delete1"))
 	assert.Nil(t, data1)
 }
 
@@ -113,8 +155,8 @@ func TestIndex_Iterator(t *testing.T) {
 	it1.Close()
 
 	// 插入1个元素之后使用迭代器进行遍历
-	res1 := index.Put([]byte("abc"), &data.LogRecordPos{Fid: 100, Offset: 10010})
-	assert.True(t, res1)
+	res1, _ := index.Put([]byte("abc"), &data.LogRecordPos{Fid: 100, Offset: 10010})
+	assert.Nil(t, res1)
 	it2 := index.Iterator(false)
 	assert.NotNil(t, it2)
 	assert.True(t, it2.Valid())
@@ -125,12 +167,12 @@ func TestIndex_Iterator(t *testing.T) {
 	it2.Close()
 
 	// 插入多个元素进行遍历
-	res2 := index.Put([]byte("abcAbc"), &data.LogRecordPos{Fid: 101, Offset: 10010})
-	assert.True(t, res2)
-	res3 := index.Put([]byte("abcAbcAbc"), &data.LogRecordPos{Fid: 102, Offset: 10010})
-	assert.True(t, res3)
-	res4 := index.Put([]byte("abcAbcAbcAbc"), &data.LogRecordPos{Fid: 103, Offset: 10010})
-	assert.True(t, res4)
+	res2, _ := index.Put([]byte("abcAbc"), &data.LogRecordPos{Fid: 101, Offset: 10010})
+	assert.Nil(t, res2)
+	res3, _ := index.Put([]byte("abcAbcAbc"), &data.LogRecordPos{Fid: 102, Offset: 10010})
+	assert.Nil(t, res3)
+	res4, _ := index.Put([]byte("abcAbcAbcAbc"), &data.LogRecordPos{Fid: 103, Offset: 10010})
+	assert.Nil(t, res4)
 
 	it3 := index.Iterator(true)
 	for i := 0; it3.Valid(); it3.Next() {

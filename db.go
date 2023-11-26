@@ -7,6 +7,7 @@ import (
 	"go-bitcask-kv/data"
 	"go-bitcask-kv/fio"
 	"go-bitcask-kv/index"
+	"go-bitcask-kv/utils"
 	"io"
 	"os"
 	"path/filepath"
@@ -48,6 +49,23 @@ type DB struct {
 
 	// the number of bytes written, but has not been persistent
 	bytesWrite uint
+
+	// invalid data size, need to be merged
+	recycleSize uint32
+}
+
+type Stat struct {
+	// 数据文件数量
+	DataFilNum uint32
+
+	// key的数量
+	KeyNum uint32
+
+	// 无效数据
+	recycleSize uint32
+
+	// 占用磁盘空间大小
+	DiskSize uint64
 }
 
 // Open creates and opens a DB instance with specified option
@@ -79,11 +97,12 @@ func Open(option Option) (*DB, error) {
 
 	// Initialize DB
 	db := &DB{
-		option:     option,
-		mu:         new(sync.RWMutex),
-		olderFiles: make(map[uint32]*data.SegDataFile),
-		index:      index.NewIndexer(option.IndexType, option.indexPath),
-		fileLock:   fileLock,
+		option:      option,
+		mu:          new(sync.RWMutex),
+		olderFiles:  make(map[uint32]*data.SegDataFile),
+		index:       index.NewIndexer(option.IndexType, option.indexPath),
+		fileLock:    fileLock,
+		recycleSize: 0,
 	}
 
 	// load MergeFiles
@@ -115,12 +134,44 @@ func Open(option Option) (*DB, error) {
 	// 如果使用MMap加载数据文件
 	// 读取完之后重置为标准IO, MMap仅仅用于数据加载
 	if db.option.MMapAtStartup {
-		db.resetIOType(fio.StandardIO)
+		if err := db.resetIOType(fio.StandardIO); err != nil {
+			return nil, err
+		}
 	}
 
 	db.isInitial = true
 
 	return db, nil
+}
+
+func (db *DB) Stat() *Stat {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	var dataFileNum = len(db.olderFiles)
+	if db.activeFile != nil {
+		dataFileNum += 1
+	}
+
+	totalSize, err := utils.DirSize(db.option.DirPath)
+	if err != nil {
+		return nil
+	}
+
+	return &Stat{
+		DataFilNum:  uint32(dataFileNum),
+		KeyNum:      uint32(db.index.Size()),
+		recycleSize: db.recycleSize,
+		DiskSize:    uint64(totalSize),
+	}
+}
+
+// Backup 数据备份到指定目录
+func (db *DB) Backup(dir string) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	return utils.CopyDir(db.option.DirPath, dir, []string{fileLockName})
 }
 
 // Put 写入key-value，key不能为空
@@ -142,8 +193,9 @@ func (db *DB) Put(key []byte, value []byte) error {
 	}
 
 	// 更新内存索引
-	if ok := db.index.Put(key, pos); !ok {
-		return ErrIndexUpdateFailed
+	// 如果已经原来已经有该key了，说明之前的数据就无效了，递增无效值
+	if oldValue, _ := db.index.Put(key, pos); oldValue != nil {
+		db.recycleSize += oldValue.Size
 	}
 
 	return nil
@@ -246,15 +298,23 @@ func (db *DB) Delete(key []byte) error {
 		Type:  data.LogRecordDeleted,
 	}
 
-	_, err := db.appendLogRecordWithLock(logRecord)
+	pos, err := db.appendLogRecordWithLock(logRecord)
 	if err != nil {
 		return err
 	}
 
+	// 该条删除记录也是可以回收的
+	db.recycleSize += pos.Size
+
 	// 写入成功后从内存索引中删除
-	ok := db.index.Delete(key)
+	oldValue, ok := db.index.Delete(key)
 	if !ok {
 		return ErrIndexUpdateFailed
+	}
+
+	// 将之前的记录删除，叠加回收值
+	if oldValue != nil {
+		db.recycleSize += oldValue.Size
 	}
 	return nil
 }
@@ -276,7 +336,9 @@ func (db *DB) Close() error {
 	defer db.mu.Unlock()
 
 	// 索引close 目前只针对B+树
-	db.index.Close()
+	if err := db.index.Close(); err != nil {
+		return err
+	}
 
 	// 关闭活跃文件
 	if err := db.activeFile.Close(); err != nil {
@@ -315,10 +377,14 @@ func checkOptions(option Option) error {
 		return errors.New("database data file size must be greater than 0")
 	}
 
+	if option.mergeRatioThr <= 0 || option.mergeRatioThr >= 1 || option.mergeMinSizeThr < 0 {
+		return errors.New("merge threshold option is invalid")
+	}
+
 	return nil
 }
 
-// 从磁盘中加载数据文件
+// 从磁盘中加载数据文件对应指针
 func (db *DB) loadDataFiles() error {
 	// 读取目录中的所有文件
 	dirEntries, err := os.ReadDir(db.option.DirPath)
@@ -391,16 +457,18 @@ func (db *DB) loadIndexFromDataFiles() error {
 
 	// 更新内存索引辅助函数
 	updateIndex := func(key []byte, typ data.LogRecordType, pos *data.LogRecordPos) {
-		var ok bool
+		var oldValue *data.LogRecordPos
 		if typ == data.LogRecordDeleted {
-			// 删除索引
-			ok = db.index.Delete(key)
+			oldValue, _ = db.index.Delete(key)
+			// 删除数据这条记录本身也可以回收
+			db.recycleSize += pos.Size
 		} else if typ == data.LogRecordNormal {
-			ok = db.index.Put(key, pos)
+			oldValue, _ = db.index.Put(key, pos)
 		}
 
-		if !ok {
-			panic("failed to load index at startup")
+		// 更新可以回收的空间大小
+		if oldValue != nil {
+			db.recycleSize += oldValue.Size
 		}
 	}
 
@@ -442,6 +510,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 			logRecordPos := &data.LogRecordPos{
 				Fid:    fileId,
 				Offset: offset,
+				Size:   uint32(size),
 			}
 
 			// 解析key，判断是否是事务
@@ -557,6 +626,7 @@ func (db *DB) appendLogRecord(record *data.LogRecord) (*data.LogRecordPos, error
 	pos := &data.LogRecordPos{
 		Fid:    db.activeFile.FileId,
 		Offset: writeOff,
+		Size:   uint32(size),
 	}
 
 	return pos, nil

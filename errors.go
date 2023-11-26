@@ -11,4 +11,5 @@ var (
 	ErrExceedMaxBatchNum    = errors.New("exceed max batch num")
 	ErrMergeIsRunning       = errors.New("merge is running")
 	ErrDatabaseIsUsing      = errors.New("the database directory is using by another process")
+	ErrMergeCondUnreached   = errors.New("the database merge condition is unreached")
 )

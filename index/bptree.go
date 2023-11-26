@@ -36,15 +36,22 @@ func NewBPlusTree(dirPath string) *BPlusTree {
 	}
 }
 
-func (bp *BPlusTree) Put(key []byte, pos *data.LogRecordPos) bool {
+func (bp *BPlusTree) Put(key []byte, pos *data.LogRecordPos) (*data.LogRecordPos, bool) {
+	var oldValue []byte
 	if err := bp.tree.Update(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(indexBucketName)
+		oldValue = bucket.Get(key)
 		err := bucket.Put(key, data.EncodeLogRecordPos(pos))
 		return err
 	}); err != nil {
 		panic("failed to put kv")
 	}
-	return true
+
+	if len(oldValue) == 0 {
+		return nil, false
+	}
+
+	return data.DecodeLogRecordPos(oldValue), true
 }
 
 func (bp *BPlusTree) Get(key []byte) *data.LogRecordPos {
@@ -66,22 +73,25 @@ func (bp *BPlusTree) Get(key []byte) *data.LogRecordPos {
 	return pos
 }
 
-func (bp *BPlusTree) Delete(key []byte) bool {
-	var ok = false
+func (bp *BPlusTree) Delete(key []byte) (*data.LogRecordPos, bool) {
+	var oldValue []byte
 	if err := bp.tree.Update(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(indexBucketName)
 
 		// 因为要判断是否删除， 要先判断元素是否存在
-		val := bucket.Get(key)
-		if len(val) != 0 {
-			ok = true
+		oldValue = bucket.Get(key)
+		if len(oldValue) != 0 {
 			return bucket.Delete(key)
 		}
 		return nil
 	}); err != nil {
 		panic("failed to delete key")
 	}
-	return ok
+
+	if len(oldValue) == 0 {
+		return nil, false
+	}
+	return data.DecodeLogRecordPos(oldValue), true
 }
 
 func (bp *BPlusTree) Size() int {

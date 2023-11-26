@@ -21,14 +21,14 @@ const (
 
 // Indexer 抽象索引接口
 type Indexer interface {
-	// Put 插入索引
-	Put(key []byte, pos *data.LogRecordPos) bool
+	// Put 插入索引, 返回是否更新以及旧值
+	Put(key []byte, pos *data.LogRecordPos) (*data.LogRecordPos, bool)
 
 	// Get 获取索引
 	Get(key []byte) *data.LogRecordPos
 
-	// Delete 删除索引
-	Delete(key []byte) bool
+	// Delete 删除索引, 返回旧值
+	Delete(key []byte) (*data.LogRecordPos, bool)
 
 	Iterator(reverse bool) IndexerIterator
 

@@ -24,33 +24,36 @@ func NewBtreeIndexer() *Btree {
 	}
 }
 
-func (bt *Btree) Put(key []byte, pos *data.LogRecordPos) bool {
-	it := &Item{key: key, pos: pos}
+func (bt *Btree) Put(key []byte, pos *data.LogRecordPos) (*data.LogRecordPos, bool) {
+	it := &BTreeItem{key: key, pos: pos}
 	bt.lock.Lock()
-	bt.tree.ReplaceOrInsert(it)
+	oldItem := bt.tree.ReplaceOrInsert(it)
 	bt.lock.Unlock()
-	return true
+	if oldItem == nil {
+		return nil, false
+	}
+	return oldItem.(*BTreeItem).pos, true
 }
 
 func (bt *Btree) Get(key []byte) *data.LogRecordPos {
-	it := &Item{key: key}
+	it := &BTreeItem{key: key}
 	btItem := bt.tree.Get(it)
 	if btItem == nil {
 		return nil
 	}
 
-	return btItem.(*Item).pos
+	return btItem.(*BTreeItem).pos
 }
 
-func (bt *Btree) Delete(key []byte) bool {
-	it := &Item{key: key}
+func (bt *Btree) Delete(key []byte) (*data.LogRecordPos, bool) {
+	it := &BTreeItem{key: key}
 	bt.lock.Lock()
 	oldItem := bt.tree.Delete(it)
 	bt.lock.Unlock()
 	if oldItem == nil {
-		return false
+		return nil, false
 	}
-	return true
+	return oldItem.(*BTreeItem).pos, true
 }
 
 func (bt *Btree) Iterator(reverse bool) IndexerIterator {
@@ -70,16 +73,16 @@ func (bt *Btree) Close() error {
 	return nil
 }
 
-// Item 实现Btree的节点
-type Item struct {
+// BTreeItem 实现Btree的节点
+type BTreeItem struct {
 	key []byte
 	pos *data.LogRecordPos
 }
 
-func (item *Item) Less(bi btree.Item) bool {
-	// bi需要为*Item 指针类型
+func (item *BTreeItem) Less(bi btree.Item) bool {
+	// bi需要为*BTreeItem 指针类型
 	// 从小到大进行排序
-	return bytes.Compare(item.key, bi.(*Item).key) < 0
+	return bytes.Compare(item.key, bi.(*BTreeItem).key) < 0
 }
 
 // BtreeIterator Btree索引迭代器
@@ -91,17 +94,17 @@ type BtreeIterator struct {
 	reverse bool
 
 	// 存放Item指针数组
-	values []*Item
+	values []*BTreeItem
 }
 
 func NewBtreeIterator(tree *btree.BTree, reverse bool) *BtreeIterator {
 	var idx = 0
-	values := make([]*Item, tree.Len())
+	values := make([]*BTreeItem, tree.Len())
 
 	//这个回调函数参数需要是 Btree中的接口类型
 	saveValues := func(it btree.Item) bool {
 		// 判断是当前自定义的Item类型
-		values[idx] = it.(*Item)
+		values[idx] = it.(*BTreeItem)
 		idx++
 
 		// 返回false则会终止遍历

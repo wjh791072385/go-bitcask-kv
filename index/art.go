@@ -21,11 +21,14 @@ func NewART() *AdaptiveRadixTree {
 	}
 }
 
-func (art *AdaptiveRadixTree) Put(key []byte, pos *data.LogRecordPos) bool {
+func (art *AdaptiveRadixTree) Put(key []byte, pos *data.LogRecordPos) (*data.LogRecordPos, bool) {
 	art.lock.Lock()
 	defer art.lock.Unlock()
-	art.tree.Insert(key, pos)
-	return true
+	oldValue, updated := art.tree.Insert(key, pos)
+	if oldValue == nil {
+		return nil, false
+	}
+	return oldValue.(*data.LogRecordPos), updated
 }
 
 func (art *AdaptiveRadixTree) Get(key []byte) *data.LogRecordPos {
@@ -38,11 +41,14 @@ func (art *AdaptiveRadixTree) Get(key []byte) *data.LogRecordPos {
 	return value.(*data.LogRecordPos)
 }
 
-func (art *AdaptiveRadixTree) Delete(key []byte) bool {
+func (art *AdaptiveRadixTree) Delete(key []byte) (*data.LogRecordPos, bool) {
 	art.lock.Lock()
 	defer art.lock.Unlock()
-	_, deleted := art.tree.Delete(key)
-	return deleted
+	oldValue, deleted := art.tree.Delete(key)
+	if oldValue == nil {
+		return nil, false
+	}
+	return oldValue.(*data.LogRecordPos), deleted
 }
 
 func (art *AdaptiveRadixTree) Iterator(reverse bool) IndexerIterator {
@@ -68,7 +74,7 @@ type ARTIterator struct {
 	reverse bool
 
 	// 存放Item指针数组
-	values []*Item
+	values []*BTreeItem
 }
 
 // NewARTIterator 返回ART索引
@@ -78,10 +84,10 @@ func NewARTIterator(tree goart.Tree, reverse bool) *ARTIterator {
 		idx = tree.Size() - 1
 	}
 
-	values := make([]*Item, tree.Size())
+	values := make([]*BTreeItem, tree.Size())
 
 	saveFunc := func(node goart.Node) bool {
-		item := &Item{
+		item := &BTreeItem{
 			key: node.Key(),
 			pos: node.Value().(*data.LogRecordPos),
 		}

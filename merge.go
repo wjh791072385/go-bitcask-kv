@@ -1,7 +1,9 @@
 package bitcaskKV
 
 import (
+	"fmt"
 	"go-bitcask-kv/data"
+	"go-bitcask-kv/utils"
 	"io"
 	"os"
 	"path/filepath"
@@ -26,6 +28,21 @@ func (db *DB) Merge() error {
 		db.mu.Unlock()
 		return ErrMergeIsRunning
 	}
+
+	// 判断当前系统是否达到可以merge的阈值
+	need, err := db.needMerge()
+	if err != nil {
+		// 别忘了释放锁
+		db.mu.Unlock()
+		return err
+	}
+
+	if !need {
+		db.mu.Unlock()
+		return ErrMergeCondUnreached
+	}
+
+	fmt.Println("merge is begin")
 
 	db.isMerging = true
 	defer func() {
@@ -107,7 +124,7 @@ func (db *DB) Merge() error {
 			// 因为内存中的数据是最新的
 			// 如果是事务，那也是已经commit并且成功的事务才会更新到内存中
 			if logRecordPos != nil && logRecordPos.Fid == dataFile.FileId && logRecordPos.Offset == offset {
-				// 清除事务标记，因为是有效的key
+				// 清除事务标记，因为都是有效的key
 				logRecord.Key = encodeRecordKeyWithSeq(realKey, nonTransactionSeqNo)
 
 				// 重写数据，写入到merge目录中
@@ -117,8 +134,9 @@ func (db *DB) Merge() error {
 				}
 
 				// 记录hint文件，其实就是记录索引信息，pos大小一般比value会小
+				// !!这里注意hint文件不需要记录事务序列号，存储realKey
 				hintRecord := &data.LogRecord{
-					Key:   logRecord.Key,
+					Key:   realKey,
 					Value: data.EncodeLogRecordPos(pos),
 				}
 
@@ -165,6 +183,35 @@ func (db *DB) Merge() error {
 	return nil
 }
 
+// needMerge 判断是否需要merge
+func (db *DB) needMerge() (bool, error) {
+	totalSize, err := utils.DirSize(db.option.DirPath)
+	if err != nil {
+		return false, err
+	}
+
+	// 判断当前系统能否有足够的空间容纳merge数据量
+	// 即可用空间 * 配置系数 > 有效数据占用空间
+	availableSize, err := utils.AvailableDiskSize()
+	if err != nil {
+		return false, err
+	}
+
+	// 如果小于则不能进行合并
+	if float32(availableSize)*db.option.mergeSpaceRatioThr <= float32(totalSize)-float32(db.recycleSize) {
+		return false, ErrMergeCondUnreached
+	}
+
+	// 当可回收数据大于最大值
+	// 或者可回收数据大于最小值，并且可回收数据 / 总数据 >= 阈值比例
+	if (db.recycleSize >= db.option.mergeMaxSizeThr) ||
+		(db.recycleSize >= db.option.mergeMinSizeThr && float32(db.recycleSize)/float32(totalSize) >= db.option.mergeRatioThr) {
+		return true, nil
+	}
+
+	return false, nil
+}
+
 // 得到merge目录
 // 比如当前文件是在/tmp/bitcask目录下
 // 那么merge目录为/tmp/bitcask-merge
@@ -205,11 +252,16 @@ func (db *DB) loadMergeFiles() error {
 			mergeFinished = true
 		}
 
+		// 不需要把flock拷贝过去了
+		if entry.Name() == fileLockName {
+			continue
+		}
+
 		// For example, Name would return "hello.go" not "home/gopher/hello.go".
 		mergeFileNames = append(mergeFileNames, entry.Name())
 	}
 
-	if mergeFinished == false {
+	if !mergeFinished {
 		return nil
 	}
 
