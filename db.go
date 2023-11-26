@@ -62,7 +62,7 @@ type Stat struct {
 	KeyNum uint32
 
 	// 无效数据
-	recycleSize uint32
+	RecycleSize uint32
 
 	// 占用磁盘空间大小
 	DiskSize uint64
@@ -161,7 +161,7 @@ func (db *DB) Stat() *Stat {
 	return &Stat{
 		DataFilNum:  uint32(dataFileNum),
 		KeyNum:      uint32(db.index.Size()),
-		recycleSize: db.recycleSize,
+		RecycleSize: db.recycleSize,
 		DiskSize:    uint64(totalSize),
 	}
 }

@@ -115,7 +115,7 @@ func TestDB_Merge3(t *testing.T) {
 	//t.Log(db.Stat().DiskSize / 1024 / 1024)
 
 	// 可回收数据大小258MB
-	//t.Log(db.recycleSize / 1024 / 1024)
+	//t.Log(db.RecycleSize / 1024 / 1024)
 
 	// 执行数据Merge操作
 	err = db.Merge()
@@ -172,7 +172,7 @@ func TestDB_Merge4(t *testing.T) {
 		assert.Nil(t, err)
 	}
 
-	t.Log(db.Stat())
+	//t.Log(db.Stat())
 
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
@@ -180,7 +180,7 @@ func TestDB_Merge4(t *testing.T) {
 		defer wg.Done()
 		// 先让merge获取锁，执行merge操作
 		time.Sleep(2 * time.Second)
-		t.Log("begin to write while merging, activeFid = ", db.activeFile.FileId)
+		//t.Log("begin to write while merging, activeFid = ", db.activeFile.FileId)
 		for i := 2000000; i < 2800000; i++ {
 			err := db.Put(utils.GetTestKey(i), utils.GetTestRandomValue(128))
 			assert.Nil(t, err)

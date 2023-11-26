@@ -1,7 +1,6 @@
 package bitcaskKV
 
 import (
-	"fmt"
 	"go-bitcask-kv/data"
 	"go-bitcask-kv/utils"
 	"io"
@@ -42,7 +41,7 @@ func (db *DB) Merge() error {
 		return ErrMergeCondUnreached
 	}
 
-	fmt.Println("merge is begin")
+	//fmt.Println("merge is begin")
 
 	db.isMerging = true
 	defer func() {
