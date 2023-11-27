@@ -11,11 +11,13 @@ import (
 )
 
 var db *bitcask.DB
+var dbPath string
 
-func init() {
+func dbInit() {
 	opts := bitcask.DefaultOption
 	dir, _ := os.MkdirTemp("", "bitcask-benchmark")
 	opts.DirPath = dir
+	dbPath = dir
 	opts.DataFileSize = 64 * 1024 * 1024
 
 	var err error
@@ -26,6 +28,14 @@ func init() {
 }
 
 func Benchmark_Put(b *testing.B) {
+	dbInit()
+	defer func() {
+		err := db.Close()
+		if err != nil {
+			panic("db close failed")
+		}
+		_ = os.RemoveAll(dbPath)
+	}()
 	b.ResetTimer()
 	b.ReportAllocs()
 
@@ -36,6 +46,15 @@ func Benchmark_Put(b *testing.B) {
 }
 
 func Benchmark_Get(b *testing.B) {
+	dbInit()
+	defer func() {
+		err := db.Close()
+		if err != nil {
+			panic("db close failed")
+		}
+		_ = os.RemoveAll(dbPath)
+	}()
+
 	// 先加入一些数据
 	for i := 0; i < 10000; i++ {
 		err := db.Put(utils.GetTestKey(i), utils.GetTestRandomValue(512))
@@ -55,6 +74,15 @@ func Benchmark_Get(b *testing.B) {
 }
 
 func Benchmark_Delete(b *testing.B) {
+	dbInit()
+	defer func() {
+		err := db.Close()
+		if err != nil {
+			panic("db close failed")
+		}
+		_ = os.RemoveAll(dbPath)
+	}()
+
 	// 先加入一些数据
 	for i := 0; i < 10000; i++ {
 		err := db.Put(utils.GetTestKey(i), utils.GetTestRandomValue(512))
