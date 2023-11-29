@@ -71,3 +71,146 @@ func TestRedisDataStructure_Del_Type(t *testing.T) {
 	_, err = rds.Get(utils.GetTestKey(1))
 	assert.Equal(t, bitcask.ErrKeyNotFound, err)
 }
+
+func TestRedisDataStructure_HGet(t *testing.T) {
+	opts := bitcask.DefaultOption
+	dir, _ := os.MkdirTemp("", "bitcask-go-redis-hget")
+	opts.DirPath = dir
+	rds, err := NewRedisData(opts)
+	assert.Nil(t, err)
+
+	defer func() {
+		_ = rds.db.Close()
+		_ = os.RemoveAll(dir)
+	}()
+
+	ok1, err := rds.HSet(utils.GetTestKey(1), []byte("field1"), utils.GetTestRandomValue(128))
+	assert.Nil(t, err)
+	assert.True(t, ok1)
+
+	v1 := utils.GetTestRandomValue(128)
+	ok2, err := rds.HSet(utils.GetTestKey(1), []byte("field1"), v1)
+	assert.Nil(t, err)
+	assert.False(t, ok2)
+
+	v2 := utils.GetTestRandomValue(128)
+	ok3, err := rds.HSet(utils.GetTestKey(1), []byte("field2"), v2)
+	assert.Nil(t, err)
+	assert.True(t, ok3)
+
+	val1, err := rds.HGet(utils.GetTestKey(1), []byte("field1"))
+	assert.Nil(t, err)
+	assert.Equal(t, v1, val1)
+
+	val2, err := rds.HGet(utils.GetTestKey(1), []byte("field2"))
+	assert.Nil(t, err)
+	assert.Equal(t, v2, val2)
+
+	_, err = rds.HGet(utils.GetTestKey(1), []byte("field-not-exist"))
+	assert.Equal(t, bitcask.ErrKeyNotFound, err)
+}
+
+func TestRedisDataStructure_HDel(t *testing.T) {
+	opts := bitcask.DefaultOption
+	dir, _ := os.MkdirTemp("", "bitcask-go-redis-hdel")
+	opts.DirPath = dir
+	rds, err := NewRedisData(opts)
+	assert.Nil(t, err)
+
+	defer func() {
+		_ = rds.db.Close()
+		_ = os.RemoveAll(dir)
+	}()
+
+	del1, err := rds.HDel(utils.GetTestKey(200), nil)
+	assert.Nil(t, err)
+	assert.False(t, del1)
+
+	ok1, err := rds.HSet(utils.GetTestKey(1), []byte("field1"), utils.GetTestRandomValue(128))
+	assert.Nil(t, err)
+	assert.True(t, ok1)
+
+	v1 := utils.GetTestRandomValue(128)
+	ok2, err := rds.HSet(utils.GetTestKey(1), []byte("field1"), v1)
+	assert.Nil(t, err)
+	assert.False(t, ok2)
+
+	v2 := utils.GetTestRandomValue(128)
+	ok3, err := rds.HSet(utils.GetTestKey(1), []byte("field2"), v2)
+	assert.Nil(t, err)
+	assert.True(t, ok3)
+
+	del2, err := rds.HDel(utils.GetTestKey(1), []byte("field1"))
+	assert.Nil(t, err)
+	assert.True(t, del2)
+}
+
+func TestRedisDataStructure_SAdd_SIsMember(t *testing.T) {
+	opts := bitcask.DefaultOption
+	dir, _ := os.MkdirTemp("", "bitcask-go-redis-SAdd")
+	opts.DirPath = dir
+	rds, err := NewRedisData(opts)
+	assert.Nil(t, err)
+
+	defer func() {
+		_ = rds.db.Close()
+		_ = os.RemoveAll(dir)
+	}()
+
+	ok, err := rds.SAdd(utils.GetTestKey(1), []byte("val-1"))
+	assert.Nil(t, err)
+	assert.True(t, ok)
+	ok, err = rds.SAdd(utils.GetTestKey(1), []byte("val-1"))
+	assert.Nil(t, err)
+	assert.False(t, ok)
+	ok, err = rds.SAdd(utils.GetTestKey(1), []byte("val-2"))
+	assert.Nil(t, err)
+	assert.True(t, ok)
+
+	ok, err = rds.SIsMember(utils.GetTestKey(2), []byte("val-1"))
+	assert.Nil(t, err)
+	assert.False(t, ok)
+	ok, err = rds.SIsMember(utils.GetTestKey(1), []byte("val-1"))
+	assert.Nil(t, err)
+	assert.True(t, ok)
+	ok, err = rds.SIsMember(utils.GetTestKey(1), []byte("val-2"))
+	assert.Nil(t, err)
+	assert.True(t, ok)
+	ok, err = rds.SIsMember(utils.GetTestKey(1), []byte("val-not-exist"))
+	assert.Nil(t, err)
+	assert.False(t, ok)
+}
+
+func TestRedisDataStructure_SRem(t *testing.T) {
+	opts := bitcask.DefaultOption
+	dir, _ := os.MkdirTemp("", "bitcask-go-redis-SRem")
+	opts.DirPath = dir
+	rds, err := NewRedisData(opts)
+	assert.Nil(t, err)
+
+	defer func() {
+		_ = rds.db.Close()
+		_ = os.RemoveAll(dir)
+	}()
+
+	ok, err := rds.SAdd(utils.GetTestKey(1), []byte("val-1"))
+	assert.Nil(t, err)
+	assert.True(t, ok)
+	ok, err = rds.SAdd(utils.GetTestKey(1), []byte("val-1"))
+	assert.Nil(t, err)
+	assert.False(t, ok)
+	ok, err = rds.SAdd(utils.GetTestKey(1), []byte("val-2"))
+	assert.Nil(t, err)
+	assert.True(t, ok)
+
+	ok, err = rds.SRem(utils.GetTestKey(2), []byte("val-1"))
+	assert.Nil(t, err)
+	assert.False(t, ok)
+	ok, err = rds.SRem(utils.GetTestKey(1), []byte("val-2"))
+	assert.Nil(t, err)
+	assert.True(t, ok)
+
+	ok, err = rds.SIsMember(utils.GetTestKey(1), []byte("val-2"))
+	assert.Nil(t, err)
+	assert.False(t, ok)
+}
